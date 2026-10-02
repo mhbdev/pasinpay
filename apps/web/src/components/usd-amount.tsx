@@ -18,13 +18,23 @@ export function UsdAmount({
 		functionName: "decimals",
 		chainId: webChainConfig.id,
 	});
-	let value = amount;
+	const { data: symbol } = useReadContract({
+		address: webChainConfig.usdgAddress,
+		abi: erc20MetadataAbi,
+		functionName: "symbol",
+		chainId: webChainConfig.id,
+	});
+	let value: string | null = null;
 	try {
-		value = formatUnits(BigInt(amount), decimals ?? 18);
+		if (decimals !== undefined && symbol === "USDG") {
+			value = formatUnits(BigInt(amount), decimals);
+		}
 	} catch {}
 	return (
 		<span className={className}>
-			${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+			{value === null
+				? "—"
+				: `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}{" "}
 			USDG
 		</span>
 	);

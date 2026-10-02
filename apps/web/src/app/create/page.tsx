@@ -69,6 +69,12 @@ export default function CreateBountyPage() {
 		functionName: "decimals",
 		chainId: activeChain.id,
 	});
+	const { data: tokenSymbol } = useReadContract({
+		address: webChainConfig.usdgAddress,
+		abi: erc20MetadataAbi,
+		functionName: "symbol",
+		chainId: activeChain.id,
+	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
 	const repositories = useQuery(trpc.bounties.repositories.queryOptions());
@@ -88,8 +94,12 @@ export default function CreateBountyPage() {
 		if (chainId !== activeChain.id) {
 			await switchChainAsync({ chainId: activeChain.id });
 		}
-		if (!client || !decimals)
-			return setError("USDG metadata is not available yet. Try again shortly.");
+		if (!client || decimals === undefined || tokenSymbol !== "USDG")
+			return setError(
+				tokenSymbol && tokenSymbol !== "USDG"
+					? "The configured token is not USDG. Check the network configuration."
+					: "USDG metadata is not available yet. Try again shortly.",
+			);
 		try {
 			const rawAmount = parseUnits(amount, decimals);
 			const repositoryHash = selectedRepository.repositoryHash as `0x${string}`;

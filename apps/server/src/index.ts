@@ -1,5 +1,6 @@
 import { trpcServer } from "@hono/trpc-server";
 import { appRouter } from "@pasinpay/api/routers/index";
+import { assertUsdGToken } from "@pasinpay/chain";
 import { sql } from "drizzle-orm";
 import { initLogger } from "evlog";
 import {
@@ -13,7 +14,7 @@ import { cors } from "hono/cors";
 import { createContext } from "./context";
 import { ENV } from "./env.server";
 import { githubWebhook } from "./routes/github-webhook";
-import { auth, db, publicClient } from "./services";
+import { auth, chainConfig, db, publicClient } from "./services";
 
 initLogger({
 	env: { service: "pasinpay-server" },
@@ -59,6 +60,7 @@ app.get("/api/readiness", async (c) => {
 	try {
 		await db.execute(sql`select 1`);
 		await publicClient.getChainId();
+		const token = await assertUsdGToken(publicClient, chainConfig);
 		const configuration = {
 			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),
 			githubApp: Boolean(
@@ -75,11 +77,17 @@ app.get("/api/readiness", async (c) => {
 			Object.values(configuration).some((configured) => !configured)
 		) {
 			return c.json(
-				{ ok: false, database: true, chain: true, configuration },
+				{ ok: false, database: true, chain: true, token, configuration },
 				503,
 			);
 		}
-		return c.json({ ok: true, database: true, chain: true, configuration });
+		return c.json({
+			ok: true,
+			database: true,
+			chain: true,
+			token,
+			configuration,
+		});
 	} catch (error) {
 		return c.json(
 			{
