@@ -8,8 +8,14 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
-import { useMutation } from "@tanstack/react-query";
-import { GitBranch, Link2, ShieldCheck } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+	ExternalLink,
+	GitBranch,
+	Link2,
+	RefreshCw,
+	ShieldCheck,
+} from "lucide-react";
 import { useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
@@ -24,6 +30,13 @@ export default function SettingsPage() {
 		trpc.bounties.walletChallenge.mutationOptions(),
 	);
 	const linkWallet = useMutation(trpc.bounties.linkWallet.mutationOptions());
+	const githubApp = useQuery(trpc.bounties.githubApp.queryOptions());
+	const githubStatus = useQuery(trpc.bounties.githubStatus.queryOptions());
+	const repositories = useQuery(trpc.bounties.repositories.queryOptions());
+	const refreshRepositories = useMutation({
+		...trpc.bounties.refreshRepositories.mutationOptions(),
+		onSuccess: () => repositories.refetch(),
+	});
 	const [message, setMessage] = useState<string | null>(null);
 
 	async function connectWallet() {
@@ -76,13 +89,17 @@ export default function SettingsPage() {
 						<CardContent className="flex items-center justify-between gap-4 border-t pt-5">
 							<div>
 								<p className="font-medium">
-									{session?.user ? session.user.name : "Not connected"}
+									{githubStatus.data?.connected
+										? session?.user?.name
+										: "Not connected"}
 								</p>
 								<p className="text-muted-foreground text-sm">
-									{session?.user?.email ?? "Connect GitHub to continue"}
+									{githubStatus.data?.connected
+										? (session?.user?.email ?? "GitHub connected")
+										: "Connect GitHub to continue"}
 								</p>
 							</div>
-							{session?.user ? (
+							{githubStatus.data?.connected ? (
 								<span className="flex items-center gap-2 text-emerald-600 text-sm">
 									<ShieldCheck className="size-4" /> Connected
 								</span>
@@ -97,6 +114,43 @@ export default function SettingsPage() {
 								>
 									Connect GitHub
 								</Button>
+							)}
+						</CardContent>
+						<CardContent className="border-t pt-5">
+							<div className="flex flex-wrap items-center gap-3">
+								{githubApp.data?.installUrl && (
+									<Button
+										variant="outline"
+										render={
+											<a
+												href={githubApp.data.installUrl}
+												target="_blank"
+												rel="noreferrer"
+											/>
+										}
+									>
+										Install GitHub App <ExternalLink data-icon="inline-end" />
+									</Button>
+								)}
+								<Button
+									variant="outline"
+									onClick={() => refreshRepositories.mutate()}
+									disabled={refreshRepositories.isPending}
+								>
+									<RefreshCw data-icon="inline-start" />
+									{refreshRepositories.isPending
+										? "Syncing repositories…"
+										: "Sync installed repositories"}
+								</Button>
+							</div>
+							{repositories.data && (
+								<p className="mt-3 text-muted-foreground text-sm">
+									{repositories.data.length} installed{" "}
+									{repositories.data.length === 1
+										? "repository"
+										: "repositories"}{" "}
+									available for bounties.
+								</p>
 							)}
 						</CardContent>
 					</Card>

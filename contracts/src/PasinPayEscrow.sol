@@ -72,6 +72,7 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         uint32 issueNumber,
         uint64 deadline
     );
+    event BountyCancelled(uint256 indexed bountyId);
     event BountyFunded(uint256 indexed bountyId, uint128 amount);
     event ClaimSubmitted(uint256 indexed bountyId, address indexed claimant, uint256 prNumber, bytes32 commitHash);
     event ClaimApproved(uint256 indexed bountyId);
@@ -227,6 +228,7 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         Bounty storage bounty = _bounty(bountyId);
         if (bounty.status != Status.Open || bounty.creator != msg.sender) revert Unauthorized();
         bounty.status = Status.Cancelled;
+        emit BountyCancelled(bountyId);
     }
 
     function setAttestor(address newAttestor) external onlyOwner {

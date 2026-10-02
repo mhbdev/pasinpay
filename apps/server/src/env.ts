@@ -12,6 +12,7 @@ export type CoercedEnvSchema = {
 	GITHUB_CLIENT_ID: string;
 	GITHUB_CLIENT_SECRET: string;
 	GITHUB_APP_ID: string;
+	GITHUB_APP_SLUG: string;
 	GITHUB_APP_PRIVATE_KEY: string;
 	GITHUB_WEBHOOK_SECRET: string;
 	PASINPAY_CHAIN_ID: string;

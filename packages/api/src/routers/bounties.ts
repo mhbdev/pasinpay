@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+	account,
 	bounty,
 	claim,
 	githubInstallation,
@@ -8,8 +9,8 @@ import {
 	walletLink,
 	walletLinkChallenge,
 } from "@pasinpay/db/schema/index";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { getAddress, verifyMessage } from "viem";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { getAddress, keccak256, toBytes, verifyMessage } from "viem";
 import { z } from "zod";
 
 import { protectedProcedure, publicProcedure, router } from "../index";
@@ -39,6 +40,66 @@ export const bountyRouter = router({
 				eq(repository.installationId, githubInstallation.id),
 			)
 			.where(eq(githubInstallation.userId, ctx.session.user.id));
+	}),
+
+	githubApp: protectedProcedure.query(({ ctx }) => ({
+		installUrl: ctx.github.appSlug
+			? `https://github.com/apps/${ctx.github.appSlug}/installations/new`
+			: null,
+	})),
+
+	githubStatus: protectedProcedure.query(async ({ ctx }) => {
+		const [linkedAccount] = await ctx.db
+			.select({ id: account.id })
+			.from(account)
+			.where(
+				and(
+					eq(account.userId, ctx.session.user.id),
+					eq(account.providerId, "github"),
+				),
+			)
+			.limit(1);
+		return { connected: Boolean(linkedAccount) };
+	}),
+
+	refreshRepositories: protectedProcedure.mutation(async ({ ctx }) => {
+		const installations = await ctx.db
+			.select()
+			.from(githubInstallation)
+			.where(eq(githubInstallation.userId, ctx.session.user.id));
+		if (!installations.length) {
+			throw new Error(
+				"Install the PasinPay GitHub App before syncing repositories",
+			);
+		}
+
+		let synced = 0;
+		for (const installation of installations) {
+			const remoteRepositories = await ctx.github.listInstallationRepositories(
+				installation.installationId,
+			);
+			for (const remote of remoteRepositories) {
+				const fullName = remote.full_name.trim();
+				if (!fullName || !remote.html_url) continue;
+				await ctx.db
+					.insert(repository)
+					.values({
+						installationId: installation.id,
+						fullName,
+						repositoryHash: keccak256(toBytes(fullName.toLowerCase())),
+						htmlUrl: remote.html_url,
+					})
+					.onConflictDoUpdate({
+						target: [repository.installationId, repository.fullName],
+						set: {
+							repositoryHash: keccak256(toBytes(fullName.toLowerCase())),
+							htmlUrl: remote.html_url,
+						},
+					});
+				synced += 1;
+			}
+		}
+		return { synced };
 	}),
 
 	list: publicProcedure.query(async ({ ctx }) => {
@@ -130,6 +191,22 @@ export const bountyRouter = router({
 					input.creatorWallet.toLowerCase()
 			)
 				throw new Error("Link this wallet before creating a bounty");
+			const [authorizedRepository] = await ctx.db
+				.select({ id: repository.id })
+				.from(repository)
+				.innerJoin(
+					githubInstallation,
+					eq(repository.installationId, githubInstallation.id),
+				)
+				.where(
+					and(
+						eq(githubInstallation.userId, ctx.session.user.id),
+						sql`lower(${repository.fullName}) = lower(${input.repository})`,
+					),
+				)
+				.limit(1);
+			if (!authorizedRepository)
+				throw new Error("Select a repository installed through the GitHub App");
 			const [row] = await ctx.db
 				.insert(bounty)
 				.values({
@@ -168,6 +245,7 @@ export const bountyRouter = router({
 					"Funded",
 					"ClaimPending",
 					"Paid",
+					"Disputed",
 					"Refunded",
 					"Cancelled",
 				]),

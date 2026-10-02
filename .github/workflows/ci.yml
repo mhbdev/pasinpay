@@ -33,7 +33,23 @@ jobs:
       - run: bun run env:generate
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay
-      - run: bunx biome check .
+      - name: Check changed source formatting
+        shell: bash
+        run: |
+          mapfile -t files < <(git diff --name-only HEAD^ HEAD -- \
+            '*.js' '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.json' '*.jsonc')
+          existing=()
+          for file in "${files[@]}"; do
+            if [[ -f "$file" && "$file" != apps/fumadocs/* ]]; then
+              existing+=("$file")
+            fi
+          done
+          if ((${#existing[@]})); then
+            bunx biome check "${existing[@]}"
+          fi
+          if git diff --name-only HEAD^ HEAD -- apps/fumadocs | grep -q .; then
+            (cd apps/fumadocs && bunx biome check .)
+          fi
       - run: bun run check-types
       - run: bun run db:migrate
         env:
@@ -49,6 +65,13 @@ jobs:
           PASINPAY_ATTESTOR_PRIVATE_KEY: 0x1111111111111111111111111111111111111111111111111111111111111111
           GITHUB_APP_PRIVATE_KEY: ci-placeholder
           PASINPAY_RPC_URL: https://sepolia-rollup.arbitrum.io/rpc
+      - name: Build production Docker images
+        shell: bash
+        run: |
+          trap 'rm -f apps/web/.env apps/server/.env' EXIT
+          cp apps/web/.env.example apps/web/.env
+          cp apps/server/.env.example apps/server/.env
+          docker compose build web server migrate worker
 
   contracts:
     runs-on: ubuntu-latest

@@ -114,6 +114,11 @@ export const escrowAbi = [
 	},
 	{
 		type: "event",
+		name: "BountyCancelled",
+		inputs: [{ indexed: true, name: "bountyId", type: "uint256" }],
+	},
+	{
+		type: "event",
 		name: "ClaimSubmitted",
 		inputs: [
 			{ indexed: true, name: "bountyId", type: "uint256" },

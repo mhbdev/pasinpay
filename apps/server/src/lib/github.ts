@@ -4,6 +4,11 @@ import { ENV } from "../env.server";
 
 const GITHUB_API = "https://api.github.com";
 
+export type GitHubInstallationRepository = {
+	full_name: string;
+	html_url: string;
+};
+
 function required(name: string, value: string | undefined) {
 	if (!value) throw new Error(`${name} is not configured`);
 	return value;
@@ -56,4 +61,17 @@ export async function githubRequest<T>(
 	if (!response.ok)
 		throw new Error(`GitHub request failed: ${response.status}`);
 	return response.json() as Promise<T>;
+}
+
+export async function listInstallationRepositories(installationId: string) {
+	const token = await createInstallationToken(installationId);
+	const repositories: GitHubInstallationRepository[] = [];
+	for (let page = 1; page <= 10; page += 1) {
+		const result = await githubRequest<{
+			repositories: GitHubInstallationRepository[];
+		}>(`/installation/repositories?per_page=100&page=${page}`, token);
+		repositories.push(...result.repositories);
+		if (result.repositories.length < 100) break;
+	}
+	return repositories;
 }

@@ -17,6 +17,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { UsdAmount } from "@/components/usd-amount";
+import { webChainConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function ReceiptPage() {
@@ -90,7 +91,11 @@ export default function ReceiptPage() {
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">NETWORK</p>
-						<p className="mt-1 font-medium">Arbitrum Sepolia</p>
+						<p className="mt-1 font-medium">
+							{webChainConfig.id === 42161
+								? "Arbitrum One"
+								: "Arbitrum Sepolia"}
+						</p>
 					</div>
 				</CardContent>
 			</Card>
@@ -100,8 +105,8 @@ export default function ReceiptPage() {
 						<a
 							href={
 								transactionHash
-									? `https://sepolia.arbiscan.io/tx/${transactionHash}`
-									: "https://sepolia.arbiscan.io"
+									? `${webChainConfig.explorerUrl}/tx/${transactionHash}`
+									: webChainConfig.explorerUrl
 							}
 							target="_blank"
 							rel="noreferrer"

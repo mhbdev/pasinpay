@@ -82,7 +82,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/pasinpay
-    command: ["bun", "run", "db:migrate"]
+    command: ["bun", "migrate.mjs"]
     depends_on:
       postgres:
         condition: service_healthy

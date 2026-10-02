@@ -60,6 +60,26 @@ const fundedEvent = {
 		{ indexed: false, name: "amount", type: "uint128" },
 	],
 } as const;
+const disputedEvent = {
+	type: "event",
+	name: "ClaimDisputed",
+	inputs: [{ indexed: true, name: "bountyId", type: "uint256" }],
+} as const;
+const cancelledEvent = {
+	type: "event",
+	name: "BountyCancelled",
+	inputs: [{ indexed: true, name: "bountyId", type: "uint256" }],
+} as const;
+const claimSubmittedEvent = {
+	type: "event",
+	name: "ClaimSubmitted",
+	inputs: [
+		{ indexed: true, name: "bountyId", type: "uint256" },
+		{ indexed: true, name: "claimant", type: "address" },
+		{ indexed: false, name: "prNumber", type: "uint256" },
+		{ indexed: false, name: "commitHash", type: "bytes32" },
+	],
+} as const;
 
 async function syncChainEvents() {
 	if (
@@ -71,32 +91,52 @@ async function syncChainEvents() {
 		.from(chainCursor)
 		.where(eq(chainCursor.id, "escrow"));
 	const latest = await publicClient.getBlockNumber();
-	const fromBlock = cursor
-		? cursor.lastBlock + BigInt(1)
-		: latest > BigInt(1000)
-			? latest - BigInt(1000)
-			: BigInt(0);
+	const fromBlock =
+		cursor && cursor.chainId === chainConfig.id
+			? cursor.lastBlock + BigInt(1)
+			: latest > BigInt(1000)
+				? latest - BigInt(1000)
+				: BigInt(0);
 	if (fromBlock > latest) return;
-	const [paid, refunded, funded] = await Promise.all([
-		publicClient.getLogs({
-			address: chainConfig.escrowAddress,
-			event: paidEvent,
-			fromBlock,
-			toBlock: latest,
-		}),
-		publicClient.getLogs({
-			address: chainConfig.escrowAddress,
-			event: refundedEvent,
-			fromBlock,
-			toBlock: latest,
-		}),
-		publicClient.getLogs({
-			address: chainConfig.escrowAddress,
-			event: fundedEvent,
-			fromBlock,
-			toBlock: latest,
-		}),
-	]);
+	const [paid, refunded, funded, disputed, cancelled, claimSubmitted] =
+		await Promise.all([
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: paidEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: refundedEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: fundedEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: disputedEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: cancelledEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: claimSubmittedEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
+		]);
 	for (const log of funded)
 		if (log.args.bountyId !== undefined)
 			await db
@@ -109,6 +149,57 @@ async function syncChainEvents() {
 				.update(bounty)
 				.set({ status: "Refunded", updatedAt: new Date() })
 				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+	for (const log of disputed)
+		if (log.args.bountyId !== undefined)
+			await db
+				.update(bounty)
+				.set({ status: "Disputed", updatedAt: new Date() })
+				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+	for (const log of cancelled)
+		if (log.args.bountyId !== undefined)
+			await db
+				.update(bounty)
+				.set({ status: "Cancelled", updatedAt: new Date() })
+				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+	for (const log of claimSubmitted)
+		if (log.args.bountyId !== undefined && log.args.claimant) {
+			const onchain = await publicClient.readContract({
+				address: chainConfig.escrowAddress,
+				abi: [
+					{
+						type: "function",
+						name: "bounties",
+						stateMutability: "view",
+						inputs: [{ name: "", type: "uint256" }],
+						outputs: [
+							{ name: "creator", type: "address" },
+							{ name: "amount", type: "uint128" },
+							{ name: "deadline", type: "uint64" },
+							{ name: "reviewWindow", type: "uint64" },
+							{ name: "reviewEnds", type: "uint64" },
+							{ name: "issueNumber", type: "uint32" },
+							{ name: "repositoryHash", type: "bytes32" },
+							{ name: "claimant", type: "address" },
+							{ name: "claimDigest", type: "bytes32" },
+							{ name: "status", type: "uint8" },
+							{ name: "approved", type: "bool" },
+						],
+					},
+				],
+				functionName: "bounties",
+				args: [log.args.bountyId],
+			});
+			await db
+				.update(bounty)
+				.set({
+					status: "ClaimPending",
+					claimantWallet: log.args.claimant,
+					claimDigest: onchain[8],
+					reviewEnds: new Date(Number(onchain[4]) * 1000),
+					updatedAt: new Date(),
+				})
+				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+		}
 	for (const log of paid)
 		if (log.args.bountyId !== undefined && log.args.recipient) {
 			const [row] = await db
@@ -283,10 +374,8 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		await tx
 			.update(bounty)
 			.set({
-				status: "ClaimPending",
 				claimantWallet: wallet.walletAddress,
 				claimDigest: digest,
-				reviewEnds: new Date(Date.now() + bountyRow.reviewWindowSeconds * 1000),
 				updatedAt: new Date(),
 			})
 			.where(eq(bounty.id, bountyRow.id));

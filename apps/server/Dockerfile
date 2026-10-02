@@ -12,6 +12,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/apps/server/dist ./dist
 COPY apps/server/package.runtime.json ./package.json
+COPY apps/server/migrate.mjs ./migrate.mjs
+COPY packages/db/src/migrations ./migrations
 RUN bun install --production --no-save
 
 EXPOSE 3000

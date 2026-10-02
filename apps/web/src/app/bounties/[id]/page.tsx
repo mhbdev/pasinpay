@@ -8,7 +8,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowUpRight,
 	Check,
@@ -20,7 +20,12 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import {
+	useAccount,
+	usePublicClient,
+	useSwitchChain,
+	useWriteContract,
+} from "wagmi";
 import { UsdAmount } from "@/components/usd-amount";
 import { webChainConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
@@ -44,29 +49,38 @@ export default function BountyDetailPage() {
 	const { data: claim } = useQuery(
 		trpc.bounties.claim.queryOptions({ bountyId: id }),
 	);
-	const { address } = useAccount();
-	const client = usePublicClient();
+	const { address, chainId } = useAccount();
+	const client = usePublicClient({ chainId: webChainConfig.id });
+	const { switchChainAsync } = useSwitchChain();
 	const { writeContractAsync } = useWriteContract();
+	const queryClient = useQueryClient();
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	async function call(
 		functionName: "submitClaim" | "approveClaim" | "finalizeClaim",
 	) {
-		if (!bounty?.onchainBountyId || !client || !address) return;
+		if (!bounty?.onchainBountyId || !client || !address)
+			return setError("Connect the wallet used for this bounty first.");
 		setBusy(functionName);
 		setError(null);
 		try {
+			if (chainId !== webChainConfig.id)
+				await switchChainAsync({ chainId: webChainConfig.id });
 			if (functionName === "submitClaim") {
 				if (!claim)
 					throw new Error("The verified attestation is not ready yet.");
+				if (claim.claimantWallet.toLowerCase() !== address.toLowerCase())
+					throw new Error(
+						"Only the attested claimant wallet can submit this claim.",
+					);
 				const evidence = claim.evidence as {
 					prNumber?: number;
 					commitHash?: string;
 				};
 				const commitHash =
 					`0x${(evidence.commitHash ?? claim.mergeCommitSha).padStart(64, "0")}` as `0x${string}`;
-				await writeContractAsync({
+				const hash = await writeContractAsync({
 					address: webChainConfig.escrowAddress,
 					abi: escrowAbi,
 					functionName,
@@ -82,14 +96,28 @@ export default function BountyDetailPage() {
 						claim.attestationSignature as `0x${string}`,
 					],
 				});
+				await client.waitForTransactionReceipt({ hash });
 			} else {
-				await writeContractAsync({
+				if (bounty.creatorWallet.toLowerCase() !== address.toLowerCase())
+					throw new Error(
+						"Only the bounty creator can approve or finalize this claim.",
+					);
+				const hash = await writeContractAsync({
 					address: webChainConfig.escrowAddress,
 					abi: escrowAbi,
 					functionName,
 					args: [BigInt(bounty.onchainBountyId)],
 				});
+				await client.waitForTransactionReceipt({ hash });
 			}
+			await Promise.all([
+				queryClient.invalidateQueries({
+					queryKey: trpc.bounties.getById.queryKey({ id }),
+				}),
+				queryClient.invalidateQueries({
+					queryKey: trpc.bounties.claim.queryKey({ bountyId: id }),
+				}),
+			]);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Transaction failed");
 		} finally {
@@ -212,7 +240,11 @@ export default function BountyDetailPage() {
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">NETWORK</p>
-							<p className="mt-1 font-medium">Arbitrum Sepolia</p>
+							<p className="mt-1 font-medium">
+								{webChainConfig.id === 42161
+									? "Arbitrum One"
+									: "Arbitrum Sepolia"}
+							</p>
 						</div>
 					</CardContent>
 				</Card>
@@ -229,15 +261,16 @@ export default function BountyDetailPage() {
 						</p>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3 pt-6">
-						{bounty.status === "ClaimPending" && claim && (
-							<Button
-								disabled={Boolean(busy)}
-								onClick={() => call("submitClaim")}
-							>
-								{busy === "submitClaim" ? "Submitting…" : "Claim USDG"}
-								<ArrowUpRight data-icon="inline-end" />
-							</Button>
-						)}
+						{(bounty.status === "Funded" || bounty.status === "ClaimPending") &&
+							claim && (
+								<Button
+									disabled={Boolean(busy)}
+									onClick={() => call("submitClaim")}
+								>
+									{busy === "submitClaim" ? "Submitting…" : "Claim USDG"}
+									<ArrowUpRight data-icon="inline-end" />
+								</Button>
+							)}
 						{bounty.status === "ClaimPending" && (
 							<Button
 								variant="outline"

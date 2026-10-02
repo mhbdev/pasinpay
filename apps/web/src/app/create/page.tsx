@@ -11,11 +11,18 @@ import {
 } from "@pasinpay/ui/components/card";
 import { Input } from "@pasinpay/ui/components/input";
 import { Label } from "@pasinpay/ui/components/label";
-import { useMutation } from "@tanstack/react-query";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@pasinpay/ui/components/select";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, GitBranch, LockKeyhole, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { keccak256, parseEventLogs, parseUnits, toBytes } from "viem";
+import { parseEventLogs, parseUnits } from "viem";
 import {
 	useAccount,
 	usePublicClient,
@@ -42,7 +49,7 @@ const erc20ApproveAbi = [
 
 export default function CreateBountyPage() {
 	const [title, setTitle] = useState("Fix checkout timeout");
-	const [repository, setRepository] = useState("acme/storefront");
+	const [repository, setRepository] = useState("");
 	const [issueNumber, setIssueNumber] = useState("17");
 	const [amount, setAmount] = useState("500");
 	const [deadline, setDeadline] = useState(() =>
@@ -64,12 +71,20 @@ export default function CreateBountyPage() {
 	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
+	const repositories = useQuery(trpc.bounties.repositories.queryOptions());
 
 	async function submit(event: React.FormEvent) {
 		event.preventDefault();
 		setError(null);
 		if (!address)
 			return setError("Connect your wallet before funding a bounty.");
+		const selectedRepository = repositories.data?.find(
+			(item) => item.fullName === repository,
+		);
+		if (!selectedRepository)
+			return setError(
+				"Select a repository installed through the GitHub App before funding.",
+			);
 		if (chainId !== activeChain.id) {
 			await switchChainAsync({ chainId: activeChain.id });
 		}
@@ -77,9 +92,7 @@ export default function CreateBountyPage() {
 			return setError("USDG metadata is not available yet. Try again shortly.");
 		try {
 			const rawAmount = parseUnits(amount, decimals);
-			const repositoryHash = keccak256(
-				toBytes(repository.trim().toLowerCase()),
-			);
+			const repositoryHash = selectedRepository.repositoryHash as `0x${string}`;
 			const deadlineSeconds = BigInt(
 				Math.floor(new Date(deadline).getTime() / 1000),
 			);
@@ -184,13 +197,33 @@ export default function CreateBountyPage() {
 								</div>
 								<div className="flex flex-col gap-2">
 									<Label htmlFor="repository">Repository</Label>
-									<Input
-										id="repository"
+									<Select
 										value={repository}
-										onChange={(event) => setRepository(event.target.value)}
-										placeholder="owner/repository"
-										required
-									/>
+										onValueChange={(value) => setRepository(value ?? "")}
+									>
+										<SelectTrigger id="repository" className="w-full">
+											<SelectValue placeholder="Select an installed repository" />
+										</SelectTrigger>
+										<SelectContent>
+											{repositories.data?.map((item) => (
+												<SelectItem key={item.id} value={item.fullName}>
+													{item.fullName}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+									{!repositories.isLoading && !repositories.data?.length && (
+										<p className="text-muted-foreground text-sm">
+											No installed repositories yet. Sync them from{" "}
+											<Link
+												className="underline underline-offset-4"
+												href="/settings"
+											>
+												Settings
+											</Link>
+											.
+										</p>
+									)}
 								</div>
 								<div className="flex flex-col gap-2">
 									<Label htmlFor="issue">Issue number</Label>

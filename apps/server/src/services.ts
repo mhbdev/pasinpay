@@ -4,6 +4,7 @@ import { createDb } from "@pasinpay/db";
 import { createPublicClient, http } from "viem";
 
 import { ENV } from "./env.server";
+import { listInstallationRepositories } from "./lib/github";
 
 export const db = createDb(ENV);
 export const auth = createAuth(ENV, db);
@@ -13,3 +14,8 @@ export const publicClient = createPublicClient({
 	chain,
 	transport: http(chainConfig.rpcUrl || undefined),
 });
+
+export const githubService = {
+	appSlug: ENV.GITHUB_APP_SLUG,
+	listInstallationRepositories,
+};
