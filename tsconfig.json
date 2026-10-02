@@ -1,0 +1,3 @@
+{
+  "extends": "@pasinpay/config/tsconfig.base.json"
+}
