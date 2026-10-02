@@ -6,22 +6,14 @@ function required(name: string) {
 	return value;
 }
 
-function requiredInProduction(name: string) {
-	const value = process.env[name] ?? "";
-	if (process.env.NODE_ENV === "production" && !value) {
-		throw new Error(`${name} is required in production`);
-	}
-	return value;
-}
-
 export const ENV = {
 	NODE_ENV: process.env.NODE_ENV ?? "development",
 	BETTER_AUTH_SECRET: required("BETTER_AUTH_SECRET"),
 	BETTER_AUTH_URL: required("BETTER_AUTH_URL"),
 	CORS_ORIGIN: required("CORS_ORIGIN"),
-	GITHUB_CLIENT_ID: requiredInProduction("GITHUB_CLIENT_ID"),
-	GITHUB_CLIENT_SECRET: requiredInProduction("GITHUB_CLIENT_SECRET"),
-	GITHUB_APP_PRIVATE_KEY: required("GITHUB_APP_PRIVATE_KEY"),
+	GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID ?? "",
+	GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET ?? "",
+	GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY ?? "",
 	GITHUB_APP_ID: process.env.GITHUB_APP_ID ?? "",
 	GITHUB_APP_SLUG: process.env.GITHUB_APP_SLUG ?? "",
 	GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET ?? "",
@@ -45,6 +37,7 @@ export const ENV = {
 	PASINPAY_MAINNET_USDG_ADDRESS:
 		process.env.PASINPAY_MAINNET_USDG_ADDRESS ??
 		"0x004B506865409877C9fA29bfb1ebA929984B9bbC",
-	PASINPAY_ATTESTOR_PRIVATE_KEY: required("PASINPAY_ATTESTOR_PRIVATE_KEY"),
+	PASINPAY_ATTESTOR_PRIVATE_KEY:
+		process.env.PASINPAY_ATTESTOR_PRIVATE_KEY ?? "",
 	DATABASE_URL: required("DATABASE_URL"),
 } as unknown as Readonly<CoercedEnvSchema>;

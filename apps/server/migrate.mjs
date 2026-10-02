@@ -27,8 +27,25 @@ try {
 	const entries = (await readdir(migrationsRoot, { withFileTypes: true }))
 		.filter((entry) => entry.isDirectory())
 		.sort((a, b) => a.name.localeCompare(b.name));
+	const legacyInitialTables = [
+		"account",
+		"bounty",
+		"chain_cursor",
+		"claim",
+		"github_installation",
+		"job",
+		"rate_limit",
+		"repository",
+		"session",
+		"settlement",
+		"user",
+		"verification",
+		"wallet_link",
+		"wallet_link_challenge",
+		"webhook_delivery",
+	];
 
-	for (const entry of entries) {
+	for (const [index, entry] of entries.entries()) {
 		const migrationUrl = pathToFileURL(
 			join(migrationsRoot, entry.name, "migration.sql"),
 		);
@@ -39,6 +56,27 @@ try {
 			[hash],
 		);
 		if (applied.rowCount) continue;
+
+		// The first generated migration was previously applied by Drizzle before
+		// this runtime runner was introduced. Its SQL was then amended to include
+		// pgcrypto, which changed the hash even though the schema was complete.
+		// Adopt that existing schema once instead of trying to recreate tables.
+		if (index === 0) {
+			const existingSchema = await pool.query(
+				`SELECT count(*)::int AS count
+				 FROM information_schema.tables
+				 WHERE table_schema = 'public' AND table_name = ANY($1::text[])`,
+				[legacyInitialTables],
+			);
+			if (existingSchema.rows[0]?.count === legacyInitialTables.length) {
+				await pool.query(
+					'INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at") VALUES ($1, $2)',
+					[hash, Date.now()],
+				);
+				console.log(`[migrate] recorded existing schema ${entry.name}`);
+				continue;
+			}
+		}
 
 		const client = await pool.connect();
 		try {
