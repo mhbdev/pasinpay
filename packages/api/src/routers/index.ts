@@ -1,14 +1,16 @@
 import { protectedProcedure, publicProcedure, router } from "../index";
+import { bountyRouter } from "./bounties";
 
 export const appRouter = router({
-  healthCheck: publicProcedure.query(() => {
-    return "OK";
-  }),
-  privateData: protectedProcedure.query(({ ctx }) => {
-    return {
-      message: "This is private",
-      user: ctx.session.user,
-    };
-  }),
+	healthCheck: publicProcedure.query(() => {
+		return "OK";
+	}),
+	privateData: protectedProcedure.query(({ ctx }) => {
+		return {
+			message: "This is private",
+			user: ctx.session.user,
+		};
+	}),
+	bounties: bountyRouter,
 });
 export type AppRouter = typeof appRouter;

@@ -1,22 +1,25 @@
 {
-  "name": "@pasinpay/api",
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*.ts"
-  },
-  "scripts": {
-    "check-types": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@pasinpay/auth": "workspace:*",
-    "@pasinpay/db": "workspace:*",
-    "@trpc/client": "catalog:",
-    "@trpc/server": "catalog:",
-    "zod": "catalog:"
-  },
-  "devDependencies": {
-    "@pasinpay/config": "workspace:*",
-    "typescript": "catalog:"
-  }
+	"name": "@pasinpay/api",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./*": "./src/*.ts"
+	},
+	"scripts": {
+		"check-types": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@pasinpay/chain": "workspace:*",
+		"@pasinpay/auth": "workspace:*",
+		"@pasinpay/db": "workspace:*",
+		"@trpc/client": "catalog:",
+		"@trpc/server": "catalog:",
+		"drizzle-orm": "catalog:",
+		"viem": "^2.57.2",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@pasinpay/config": "workspace:*",
+		"typescript": "catalog:"
+	}
 }

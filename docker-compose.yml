@@ -65,8 +65,46 @@ services:
       retries: 5
       start_period: 10s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      secrets:
+        - web_env
+        - server_env
+    init: true
+    env_file:
+      - path: apps/server/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/pasinpay
+    command: ["bun", "run", "db:migrate"]
+    depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      secrets:
+        - web_env
+        - server_env
+    init: true
+    env_file:
+      - path: apps/server/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/pasinpay
+    command: ["bun", "dist/worker.mjs"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   postgres:

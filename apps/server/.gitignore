@@ -56,3 +56,4 @@ next-env.d.ts
 
 !.env.schema
 /src/env.ts
+!/src/env.ts

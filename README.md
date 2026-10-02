@@ -1,4 +1,34 @@
-# pasinpay
+# PasinPay
+
+Pay for shipped code, automatically.
+
+PasinPay connects merged GitHub work to programmable USDG settlement on Arbitrum. The repository now contains the end-to-end foundation: escrow contract, EIP-712 attestations, GitHub webhook worker, Better Auth wallet linking, database index, and Next.js product UI.
+
+## Quick start
+
+```bash
+bun install
+bun run env:generate
+bun run db:start
+bun run dev
+```
+
+Copy the `.env.example` files into local `.env` files and fill in the GitHub OAuth/App values when testing the real webhook flow. The UI defaults to Arbitrum Sepolia and reads USDG decimals from the token contract.
+
+## Smart contract
+
+```bash
+cd contracts
+forge install OpenZeppelin/openzeppelin-contracts --no-commit
+forge test
+forge script script/Deploy.s.sol --rpc-url "$PASINPAY_RPC_URL" --broadcast
+```
+
+The escrow accepts only the configured USDG token, validates EIP-712 claims, prevents nonce replay and double payment, and enforces creator approval plus the review window. Transfer ownership to a Safe before using a deployment with value-bearing assets.
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for the service boundaries, webhook flow, operational requirements, and production deployment checklist.
 
 This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Hono, TRPC, and more.
 

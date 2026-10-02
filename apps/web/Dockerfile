@@ -19,13 +19,9 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
-# auto-load needs the Varlock CLI and its installed dependencies.
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/web/.env.schema ./apps/web/.env.schema
-
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3001
 EXPOSE 3001
 
 WORKDIR /app/apps/web
-CMD ["node", "--import", "varlock/auto-load", "server.js"]
+CMD ["node", "server.js"]

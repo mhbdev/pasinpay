@@ -1,0 +1,17 @@
+{
+	"name": "pasinpay-server-runtime",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@hono/trpc-server": "^0.4.2",
+		"@trpc/server": "^11.18.0",
+		"better-auth": "1.7.5",
+		"drizzle-orm": "1.0.0-rc.4",
+		"evlog": "^2.28.1",
+		"hono": "^4.13.12",
+		"jose": "^6.1.0",
+		"pg": "^8.23.0",
+		"viem": "^2.57.2",
+		"zod": "^4.5.4"
+	}
+}

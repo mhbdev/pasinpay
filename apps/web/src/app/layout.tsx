@@ -1,43 +1,53 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 
 import "../index.css";
+import { cn } from "@pasinpay/ui/lib/utils";
 import Header from "@/components/header";
 import Providers from "@/components/providers";
 import PwaRegistration from "@/components/pwa-registration";
 
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+
 const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+	variable: "--font-geist-sans",
+	subsets: ["latin"],
 });
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+	variable: "--font-geist-mono",
+	subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "pasinpay",
-  description: "pasinpay",
+	title: "PasinPay — Pay for shipped code, automatically.",
+	description:
+		"Fund GitHub work in USDG. Settle verified merged pull requests on Arbitrum.",
 };
 
 export default function RootLayout({
-  children,
+	children,
 }: Readonly<{
-  children: React.ReactNode;
+	children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <PwaRegistration />
+	return (
+		<html
+			lang="en"
+			suppressHydrationWarning
+			className={cn("font-sans", inter.variable)}
+		>
+			<body
+				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+			>
+				<PwaRegistration />
 
-        <Providers>
-          <div className="grid grid-rows-[auto_1fr] h-svh">
-            <Header />
-            {children}
-          </div>
-        </Providers>
-      </body>
-    </html>
-  );
+				<Providers>
+					<div className="grid h-svh grid-rows-[auto_1fr]">
+						<Header />
+						{children}
+					</div>
+				</Providers>
+			</body>
+		</html>
+	);
 }

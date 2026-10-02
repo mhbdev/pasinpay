@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: pasinpay
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pasinpay"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run env:generate
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay
+      - run: bunx biome check .
+      - run: bun run check-types
+      - run: bun run db:migrate
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay
+      - run: bun run build
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay
+          BETTER_AUTH_SECRET: ci-secret-that-is-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          CORS_ORIGIN: http://localhost:3001
+          NEXT_PUBLIC_SERVER_URL: http://localhost:3000
+          OPENROUTER_API_KEY: ci-placeholder
+          PASINPAY_ATTESTOR_PRIVATE_KEY: 0x1111111111111111111111111111111111111111111111111111111111111111
+          GITHUB_APP_PRIVATE_KEY: ci-placeholder
+          PASINPAY_RPC_URL: https://sepolia-rollup.arbitrum.io/rpc
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge build
+        working-directory: contracts
+      - run: forge test -vv
+        working-directory: contracts

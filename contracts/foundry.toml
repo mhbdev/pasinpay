@@ -1,0 +1,19 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
+[profile.default.fuzz]
+runs = 256
+
+[rpc_endpoints]
+arbitrum_sepolia = "${PASINPAY_RPC_URL}"
+
+[etherscan]
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", chain = 421614, url = "https://api-sepolia.arbiscan.io/api" }

@@ -10,9 +10,10 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=
 FROM oven/bun:1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder /app /app
+COPY --from=builder /app/apps/server/dist ./dist
+COPY apps/server/package.runtime.json ./package.json
+RUN bun install --production --no-save
 
 EXPOSE 3000
 
-WORKDIR /app/apps/server
 CMD ["bun", "dist/index.mjs"]

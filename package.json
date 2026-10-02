@@ -1,77 +1,74 @@
 {
-  "name": "pasinpay",
-  "private": true,
-  "workspaces": {
-    "packages": [
-      "apps/*",
-      "packages/*"
-    ],
-    "catalog": {
-      "zod": "^4.5.4",
-      "typescript": "^6.0.3",
-      "@types/bun": "^1.4.2",
-      "varlock": "1.18.0",
-      "@trpc/server": "^11.18.0",
-      "better-auth": "1.7.5",
-      "evlog": "^2.28.1",
-      "lucide-react": "^1.41.0",
-      "next-themes": "^0.4.6",
-      "react": "^19.2.8",
-      "react-dom": "^19.2.8",
-      "sonner": "^2.0.8",
-      "@trpc/client": "^11.18.0",
-      "@tailwindcss/postcss": "^4.3.3",
-      "@types/react": "^19.2.18",
-      "@types/react-dom": "^19.2.7",
-      "tailwindcss": "^4.3.3",
-      "drizzle-orm": "1.0.0-rc.4"
-    }
-  },
-  "type": "module",
-  "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "check-types": "turbo run check-types",
-    "dev:web": "turbo run dev -F web --",
-    "dev:server": "turbo run dev -F server --",
-    "db:push": "turbo run db:push -F @pasinpay/db --",
-    "db:studio": "turbo run db:studio -F @pasinpay/db --",
-    "db:generate": "turbo run db:generate -F @pasinpay/db --",
-    "db:migrate": "turbo run db:migrate -F @pasinpay/db --",
-    "db:start": "docker compose up -d postgres",
-    "db:watch": "docker compose up postgres",
-    "db:stop": "docker compose stop postgres",
-    "db:down": "docker compose down postgres",
-    "docker:build": "docker compose build",
-    "docker:up": "docker compose up -d --build",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f",
-    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
-    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
-    "auth:generate": "cd apps/server && bun run auth:generate",
-    "check": "biome check --write .",
-    "prepare": "husky"
-  },
-  "dependencies": {
-    "zod": "catalog:"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@pasinpay/config": "workspace:*",
-    "@types/bun": "catalog:",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.5.0",
-    "turbo": "^2.10.12",
-    "typescript": "catalog:",
-    "varlock": "catalog:"
-  },
-  "overrides": {
-    "@next/env": "npm:@varlock/nextjs-integration@1.2.2"
-  },
-  "lint-staged": {
-    "*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}": [
-      "biome check --write ."
-    ]
-  },
-  "packageManager": "bun@1.4.2"
+	"name": "pasinpay",
+	"private": true,
+	"workspaces": {
+		"packages": [
+			"apps/*",
+			"packages/*"
+		],
+		"catalog": {
+			"zod": "^4.5.4",
+			"typescript": "^6.0.3",
+			"@types/bun": "^1.4.2",
+			"varlock": "1.18.0",
+			"@trpc/server": "^11.18.0",
+			"better-auth": "1.7.5",
+			"evlog": "^2.28.1",
+			"lucide-react": "^1.41.0",
+			"next-themes": "^0.4.6",
+			"react": "^19.2.8",
+			"react-dom": "^19.2.8",
+			"sonner": "^2.0.8",
+			"@trpc/client": "^11.18.0",
+			"@tailwindcss/postcss": "^4.3.3",
+			"@types/react": "^19.2.18",
+			"@types/react-dom": "^19.2.7",
+			"tailwindcss": "^4.3.3",
+			"drizzle-orm": "1.0.0-rc.4"
+		}
+	},
+	"type": "module",
+	"scripts": {
+		"dev": "turbo run dev",
+		"build": "turbo run build",
+		"check-types": "turbo run check-types",
+		"dev:web": "turbo run dev -F web --",
+		"dev:server": "turbo run dev -F server --",
+		"db:push": "turbo run db:push -F @pasinpay/db --",
+		"db:studio": "turbo run db:studio -F @pasinpay/db --",
+		"db:generate": "turbo run db:generate -F @pasinpay/db --",
+		"db:migrate": "turbo run db:migrate -F @pasinpay/db --",
+		"db:start": "docker compose up -d postgres",
+		"db:watch": "docker compose up postgres",
+		"db:stop": "docker compose stop postgres",
+		"db:down": "docker compose down postgres",
+		"docker:build": "docker compose build",
+		"docker:up": "docker compose up -d --build",
+		"docker:down": "docker compose down",
+		"docker:logs": "docker compose logs -f",
+		"env:generate": "node scripts/generate-env.mjs",
+		"postinstall": "node scripts/generate-env.mjs",
+		"auth:generate": "cd apps/server && bun run auth:generate",
+		"check": "biome check --write .",
+		"prepare": "husky"
+	},
+	"dependencies": {
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.12",
+		"@pasinpay/config": "workspace:*",
+		"@types/bun": "catalog:",
+		"husky": "^9.1.7",
+		"lint-staged": "^17.5.0",
+		"turbo": "^2.10.12",
+		"typescript": "catalog:",
+		"varlock": "catalog:"
+	},
+	"lint-staged": {
+		"*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}": [
+			"biome check --write"
+		]
+	},
+	"packageManager": "bun@1.4.2"
 }

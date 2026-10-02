@@ -7,6 +7,12 @@ node_modules
 dist
 build
 *.tsbuildinfo
+contracts/cache
+contracts/out
+
+.playwright-cli
+output
+outputs
 
 # Generated files
 apps/web/src/routeTree.gen.ts
