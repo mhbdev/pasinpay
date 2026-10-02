@@ -52,6 +52,7 @@ jobs:
             (cd apps/fumadocs && bunx biome check .)
           fi
       - run: bun run check-types
+      - run: bun run test
       - run: bun run db:migrate
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay

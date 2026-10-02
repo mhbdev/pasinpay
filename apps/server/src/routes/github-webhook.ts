@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import {
 	account,
 	githubInstallation,
@@ -9,29 +8,15 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { ENV } from "../env.server";
+import { validGitHubWebhookSignature } from "../lib/github-webhook-signature";
 import { db } from "../services";
-
-function validSignature(
-	body: string,
-	signature: string | undefined,
-	secret: string,
-) {
-	if (!signature?.startsWith("sha256=")) return false;
-	const expected = Buffer.from(
-		`sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
-	);
-	const received = Buffer.from(signature);
-	return (
-		expected.length === received.length && timingSafeEqual(expected, received)
-	);
-}
 
 export const githubWebhook = new Hono();
 
 githubWebhook.post("/", async (c) => {
 	const body = await c.req.text();
 	if (
-		!validSignature(
+		!validGitHubWebhookSignature(
 			body,
 			c.req.header("x-hub-signature-256"),
 			ENV.GITHUB_WEBHOOK_SECRET,
