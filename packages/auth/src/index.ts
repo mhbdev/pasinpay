@@ -23,12 +23,6 @@ export function createAuth(
 			schema,
 		}),
 		trustedOrigins: [env.CORS_ORIGIN, ...desktopOrigins],
-		emailAndPassword: {
-			enabled: true,
-			autoSignIn: true,
-			minPasswordLength: 8,
-			maxPasswordLength: 128,
-		},
 		socialProviders:
 			env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
 				? {

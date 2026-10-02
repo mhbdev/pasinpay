@@ -9,20 +9,11 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
-import {
-	Field,
-	FieldError,
-	FieldGroup,
-	FieldLabel,
-	FieldSeparator,
-} from "@pasinpay/ui/components/field";
-import { Input } from "@pasinpay/ui/components/input";
 import { Spinner } from "@pasinpay/ui/components/spinner";
-import { useForm } from "@tanstack/react-form";
 import { GitBranch } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import z from "zod";
 
 import { authClient } from "@/lib/auth-client";
 
@@ -33,30 +24,24 @@ export default function SignUpForm({
 }) {
 	const router = useRouter();
 	const { isPending: sessionPending } = authClient.useSession();
-	const form = useForm({
-		defaultValues: { name: "", email: "", password: "" },
-		validators: {
-			onSubmit: z.object({
-				name: z.string().trim().min(2, "Enter your name."),
-				email: z.email("Enter a valid email address."),
-				password: z.string().min(8, "Password must be at least 8 characters."),
-			}),
-		},
-		onSubmit: async ({ value }) => {
-			await authClient.signUp.email(
-				{ name: value.name, email: value.email, password: value.password },
-				{
-					onSuccess: () => {
-						toast.success("Account created");
-						router.push("/dashboard");
-					},
-					onError: (error) => {
-						toast.error(error.error.message || "Sign up failed.");
-					},
+	const [isSigningUp, setIsSigningUp] = useState(false);
+
+	async function continueWithGithub() {
+		setIsSigningUp(true);
+		await authClient.signIn.social(
+			{ provider: "github", callbackURL: "/dashboard" },
+			{
+				onSuccess: () => {
+					toast.success("Your PasinPay account is ready");
+					router.push("/dashboard");
 				},
-			);
-		},
-	});
+				onError: (error) => {
+					setIsSigningUp(false);
+					toast.error(error.error.message || "GitHub sign up failed.");
+				},
+			},
+		);
+	}
 
 	if (sessionPending) return <div className="mx-auto w-full max-w-md p-6" />;
 
@@ -64,115 +49,32 @@ export default function SignUpForm({
 		<main className="mx-auto flex w-full max-w-md flex-1 items-center px-5 py-12">
 			<Card className="w-full">
 				<CardHeader>
-					<CardTitle className="text-2xl">Create your account</CardTitle>
+					<CardTitle className="text-2xl">
+						Create your PasinPay account
+					</CardTitle>
 					<CardDescription>
-						Connect GitHub and a wallet when you are ready to ship.
+						Use GitHub to create an account. No email verification or password
+						is required.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					<form
-						onSubmit={(event) => {
-							event.preventDefault();
-							form.handleSubmit();
-						}}
+					<Button
+						className="w-full"
+						disabled={isSigningUp}
+						onClick={continueWithGithub}
+						type="button"
 					>
-						<FieldGroup>
-							<form.Field name="name">
-								{(field) => (
-									<Field data-invalid={field.state.meta.errors.length > 0}>
-										<FieldLabel htmlFor={field.name}>Name</FieldLabel>
-										<Input
-											id={field.name}
-											name={field.name}
-											autoComplete="name"
-											value={field.state.value}
-											aria-invalid={field.state.meta.errors.length > 0}
-											onBlur={field.handleBlur}
-											onChange={(event) =>
-												field.handleChange(event.target.value)
-											}
-										/>
-										<FieldError errors={field.state.meta.errors} />
-									</Field>
-								)}
-							</form.Field>
-							<form.Field name="email">
-								{(field) => (
-									<Field data-invalid={field.state.meta.errors.length > 0}>
-										<FieldLabel htmlFor={field.name}>Email</FieldLabel>
-										<Input
-											id={field.name}
-											name={field.name}
-											type="email"
-											autoComplete="email"
-											value={field.state.value}
-											aria-invalid={field.state.meta.errors.length > 0}
-											onBlur={field.handleBlur}
-											onChange={(event) =>
-												field.handleChange(event.target.value)
-											}
-										/>
-										<FieldError errors={field.state.meta.errors} />
-									</Field>
-								)}
-							</form.Field>
-							<form.Field name="password">
-								{(field) => (
-									<Field data-invalid={field.state.meta.errors.length > 0}>
-										<FieldLabel htmlFor={field.name}>Password</FieldLabel>
-										<Input
-											id={field.name}
-											name={field.name}
-											type="password"
-											autoComplete="new-password"
-											value={field.state.value}
-											aria-invalid={field.state.meta.errors.length > 0}
-											onBlur={field.handleBlur}
-											onChange={(event) =>
-												field.handleChange(event.target.value)
-											}
-										/>
-										<FieldError errors={field.state.meta.errors} />
-									</Field>
-								)}
-							</form.Field>
-						</FieldGroup>
-						<FieldSeparator>or continue with</FieldSeparator>
-						<Button
-							className="w-full"
-							variant="outline"
-							type="button"
-							onClick={() =>
-								authClient.signIn.social({
-									provider: "github",
-									callbackURL: "/dashboard",
-								})
-							}
-						>
-							<GitBranch data-icon="inline-start" /> Continue with GitHub
-						</Button>
-						<form.Subscribe
-							selector={(state) => ({
-								canSubmit: state.canSubmit,
-								isSubmitting: state.isSubmitting,
-							})}
-						>
-							{({ canSubmit, isSubmitting }) => (
-								<Button
-									className="mt-5 w-full"
-									disabled={!canSubmit || isSubmitting}
-									type="submit"
-								>
-									{isSubmitting ? <Spinner data-icon="inline-start" /> : null}{" "}
-									Create account
-								</Button>
-							)}
-						</form.Subscribe>
-					</form>
+						{isSigningUp ? (
+							<Spinner data-icon="inline-start" />
+						) : (
+							<GitBranch data-icon="inline-start" />
+						)}
+						Continue with GitHub
+					</Button>
 				</CardContent>
 				<CardFooter className="justify-center">
 					<Button variant="link" type="button" onClick={onSwitchToSignIn}>
-						Already have an account? Sign in
+						Already have an account? Sign in with GitHub
 					</Button>
 				</CardFooter>
 			</Card>

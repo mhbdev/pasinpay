@@ -59,7 +59,27 @@ app.get("/api/readiness", async (c) => {
 	try {
 		await db.execute(sql`select 1`);
 		await publicClient.getChainId();
-		return c.json({ ok: true, database: true, chain: true });
+		const configuration = {
+			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),
+			githubApp: Boolean(
+				ENV.GITHUB_APP_ID &&
+					ENV.GITHUB_APP_SLUG &&
+					ENV.GITHUB_APP_PRIVATE_KEY &&
+					ENV.GITHUB_WEBHOOK_SECRET,
+			),
+			escrow: !/^0x0{40}$/i.test(ENV.PASINPAY_ESCROW_ADDRESS),
+			attestor: Boolean(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY),
+		};
+		if (
+			ENV.NODE_ENV === "production" &&
+			Object.values(configuration).some((configured) => !configured)
+		) {
+			return c.json(
+				{ ok: false, database: true, chain: true, configuration },
+				503,
+			);
+		}
+		return c.json({ ok: true, database: true, chain: true, configuration });
 	} catch (error) {
 		return c.json(
 			{
