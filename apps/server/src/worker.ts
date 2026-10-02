@@ -396,6 +396,13 @@ export async function runWorker() {
 				await syncChainEvents();
 			} catch {}
 		}
+		const staleLock = new Date(Date.now() - 5 * 60_000);
+		await db
+			.update(jobTable)
+			.set({ status: "pending", lockedAt: null })
+			.where(
+				and(eq(jobTable.status, "running"), lt(jobTable.lockedAt, staleLock)),
+			);
 		const [next] = await db
 			.select()
 			.from(jobTable)
@@ -411,34 +418,42 @@ export async function runWorker() {
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 			continue;
 		}
-		await db
+		const [claimed] = await db
 			.update(jobTable)
 			.set({
 				status: "running",
 				lockedAt: new Date(),
 				attempts: next.attempts + 1,
 			})
-			.where(eq(jobTable.id, next.id));
+			.where(
+				and(
+					eq(jobTable.id, next.id),
+					eq(jobTable.status, "pending"),
+					isNull(jobTable.lockedAt),
+				),
+			)
+			.returning();
+		if (!claimed) continue;
 		try {
-			await processJob(next);
+			await processJob(claimed);
 			await db
 				.update(jobTable)
 				.set({ status: "completed", lockedAt: null })
-				.where(eq(jobTable.id, next.id));
+				.where(eq(jobTable.id, claimed.id));
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : "Unknown worker error";
 			await db
 				.update(jobTable)
 				.set({
-					status: next.attempts >= 4 ? "failed" : "pending",
+					status: claimed.attempts >= 4 ? "failed" : "pending",
 					lockedAt: null,
 					lastError: message,
 					availableAt: new Date(
-						Date.now() + Math.min(60_000, 2 ** next.attempts * 1000),
+						Date.now() + Math.min(60_000, 2 ** claimed.attempts * 1000),
 					),
 				})
-				.where(eq(jobTable.id, next.id));
+				.where(eq(jobTable.id, claimed.id));
 		}
 	}
 }
