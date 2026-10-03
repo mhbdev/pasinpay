@@ -9,7 +9,12 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
-import { Input } from "@pasinpay/ui/components/input";
+import { Field, FieldGroup, FieldLabel } from "@pasinpay/ui/components/field";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupInput,
+} from "@pasinpay/ui/components/input-group";
 import {
 	Select,
 	SelectContent,
@@ -17,6 +22,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@pasinpay/ui/components/select";
+import { Separator } from "@pasinpay/ui/components/separator";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
 	ArrowUpRight,
@@ -62,8 +68,17 @@ function readSort(value: string | null): SortFilter {
 }
 
 function statusLabel(status: string) {
-	return status.replace("ClaimPending", "Claim pending");
+	return status === "all"
+		? "All statuses"
+		: status.replace("ClaimPending", "Claim pending");
 }
+
+const sortLabels: Record<SortFilter, string> = {
+	newest: "Newest first",
+	oldest: "Oldest first",
+	reward_high: "Highest reward",
+	reward_low: "Lowest reward",
+};
 
 function BountiesContent() {
 	const router = useRouter();
@@ -168,134 +183,130 @@ function BountiesContent() {
 			<Card>
 				<CardHeader className="border-b">
 					<CardTitle className="flex items-center gap-2 text-base">
-						<Search className="size-4" /> Available work
+						<Search className="size-4" /> Find funded work
 					</CardTitle>
 					<CardDescription>
-						Search by bounty title, repository, or GitHub issue.
+						Search first, then refine by status, repository, or reward.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-5">
-					<div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-						<div className="flex-1 space-y-1.5">
-							<label
-								className="text-muted-foreground text-xs"
-								htmlFor="bounty-search"
-							>
-								Search
-							</label>
-							<div className="relative">
-								<Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-								<Input
+					<FieldGroup>
+						<Field>
+							<FieldLabel htmlFor="bounty-search">Search bounties</FieldLabel>
+							<InputGroup>
+								<InputGroupAddon>
+									<Search aria-hidden="true" />
+								</InputGroupAddon>
+								<InputGroupInput
 									aria-label="Search bounties"
-									className="pl-8"
 									id="bounty-search"
 									onChange={(event) => setSearchInput(event.target.value)}
-									placeholder="Search title, repository, or issue…"
+									placeholder="Search by title, repository, or GitHub issue…"
 									type="search"
 									value={searchInput}
 								/>
+							</InputGroup>
+						</Field>
+					</FieldGroup>
+					<div className="flex flex-col gap-4 border-t pt-5">
+						<div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+							<div className="flex flex-col gap-1">
+								<p className="font-medium text-sm">Refine results</p>
+								<p className="text-muted-foreground text-xs">
+									Use one or more filters to narrow the work list.
+								</p>
 							</div>
-						</div>
-						<div className="space-y-1.5">
-							<label
-								className="text-muted-foreground text-xs"
-								htmlFor="bounty-status"
-							>
-								Status
-							</label>
-							<Select
-								onValueChange={(value) =>
-									updateUrl({ status: value === "all" ? null : value })
-								}
-								value={status}
-							>
-								<SelectTrigger
-									aria-label="Filter by status"
-									className="w-full lg:w-36"
-									id="bounty-status"
+							{hasFilters ? (
+								<Button
+									className="self-start sm:self-auto"
+									onClick={clearFilters}
+									size="sm"
+									variant="ghost"
 								>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{STATUS_VALUES.map((value) => (
-										<SelectItem key={value} value={value}>
-											{value === "all" ? "All statuses" : statusLabel(value)}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
+									<X data-icon="inline-start" /> Clear filters
+								</Button>
+							) : null}
 						</div>
-						<div className="space-y-1.5">
-							<label
-								className="text-muted-foreground text-xs"
-								htmlFor="bounty-repository"
-							>
-								Repository
-							</label>
-							<Select
-								onValueChange={(value) =>
-									updateUrl({ repository: value === "all" ? null : value })
-								}
-								value={repository || "all"}
-							>
-								<SelectTrigger
-									aria-label="Filter by repository"
-									className="w-full lg:w-52"
-									id="bounty-repository"
+						<FieldGroup className="grid gap-3 md:grid-cols-3">
+							<Field>
+								<FieldLabel htmlFor="bounty-status">Status</FieldLabel>
+								<Select
+									onValueChange={(value) =>
+										updateUrl({ status: value === "all" ? null : value })
+									}
+									value={status}
 								>
-									<SelectValue placeholder="All repositories" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="all">All repositories</SelectItem>
-									{data?.repositories.map((item) => (
-										<SelectItem key={item} value={item}>
-											{item}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="space-y-1.5">
-							<label
-								className="text-muted-foreground text-xs"
-								htmlFor="bounty-sort"
-							>
-								Sort
-							</label>
-							<Select
-								onValueChange={(value) =>
-									updateUrl({ sort: value === "newest" ? null : value })
-								}
-								value={sort}
-							>
-								<SelectTrigger
-									aria-label="Sort bounties"
-									className="w-full lg:w-40"
-									id="bounty-sort"
+									<SelectTrigger
+										aria-label="Filter by status"
+										className="w-full"
+										id="bounty-status"
+									>
+										<SelectValue>{statusLabel(status)}</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{STATUS_VALUES.map((value) => (
+											<SelectItem key={value} value={value}>
+												{value === "all" ? "All statuses" : statusLabel(value)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</Field>
+							<Field>
+								<FieldLabel htmlFor="bounty-repository">Repository</FieldLabel>
+								<Select
+									onValueChange={(value) =>
+										updateUrl({ repository: value === "all" ? null : value })
+									}
+									value={repository || "all"}
 								>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="newest">Newest first</SelectItem>
-									<SelectItem value="oldest">Oldest first</SelectItem>
-									<SelectItem value="reward_high">Highest reward</SelectItem>
-									<SelectItem value="reward_low">Lowest reward</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						{hasFilters ? (
-							<Button
-								className="shrink-0"
-								onClick={clearFilters}
-								size="sm"
-								variant="ghost"
-							>
-								<X className="size-3.5" /> Clear
-							</Button>
-						) : null}
+									<SelectTrigger
+										aria-label="Filter by repository"
+										className="w-full"
+										id="bounty-repository"
+									>
+										<SelectValue>
+											{repository || "All repositories"}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="all">All repositories</SelectItem>
+										{data?.repositories.map((item) => (
+											<SelectItem key={item} value={item}>
+												{item}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</Field>
+							<Field>
+								<FieldLabel htmlFor="bounty-sort">Sort by</FieldLabel>
+								<Select
+									onValueChange={(value) =>
+										updateUrl({ sort: value === "newest" ? null : value })
+									}
+									value={sort}
+								>
+									<SelectTrigger
+										aria-label="Sort bounties"
+										className="w-full"
+										id="bounty-sort"
+									>
+										<SelectValue>{sortLabels[sort]}</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="newest">Newest first</SelectItem>
+										<SelectItem value="oldest">Oldest first</SelectItem>
+										<SelectItem value="reward_high">Highest reward</SelectItem>
+										<SelectItem value="reward_low">Lowest reward</SelectItem>
+									</SelectContent>
+								</Select>
+							</Field>
+						</FieldGroup>
 					</div>
 
-					<div className="flex items-center justify-between gap-3 border-y py-3 text-muted-foreground text-xs">
+					<Separator />
+					<div className="flex items-center justify-between gap-3 text-muted-foreground text-xs">
 						<div aria-live="polite" className="flex items-center gap-2">
 							<ListFilter className="size-3.5" />
 							{isLoading
