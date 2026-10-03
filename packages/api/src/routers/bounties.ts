@@ -377,7 +377,6 @@ export const bountyRouter = router({
 					const issuePullRequests = await ctx.github.listRepositoryPullRequests(
 						repositoryInstallation.installationId,
 						row.repository,
-						row.issueNumber,
 					);
 					const marker = new RegExp(
 						`\\[PasinPay\\s+#${row.issueNumber}\\]`,

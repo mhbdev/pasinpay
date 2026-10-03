@@ -183,19 +183,17 @@ export async function listRepositoryIssues(
 }
 
 /**
- * GitHub's issue pulls endpoint returns every PR associated with an issue,
- * including PRs that are still open. That makes it the source for the public
- * participation feed; merge/attestation state is derived separately by the
- * bounty API from our durable claim records.
+ * Repository pull requests include open and closed work. The bounty API
+ * applies the deterministic PasinPay title marker for the issue number, which
+ * also works when a contributor targets a non-default base branch.
  */
 export async function listRepositoryPullRequests(
 	installationId: string,
 	repository: string,
-	issueNumber: number,
 ) {
 	const token = await createInstallationToken(installationId);
 	const pullRequests = await githubRequest<GitHubPullRequest[]>(
-		`/repos/${repository}/issues/${issueNumber}/pulls?per_page=100`,
+		`/repos/${repository}/pulls?state=all&per_page=100&sort=updated&direction=desc`,
 		token,
 	);
 	return pullRequests

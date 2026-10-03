@@ -29,7 +29,6 @@ export type GitHubService = {
 	listRepositoryPullRequests: (
 		installationId: string,
 		repository: string,
-		issueNumber: number,
 	) => Promise<
 		Array<{
 			number: number;
