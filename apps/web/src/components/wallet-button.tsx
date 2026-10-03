@@ -1,7 +1,18 @@
 "use client";
 
 import { Button } from "@pasinpay/ui/components/button";
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@pasinpay/ui/components/dialog";
 import { Wallet } from "lucide-react";
+import { useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 
 import { useAppNetwork } from "./network-provider";
@@ -11,6 +22,7 @@ function shortAddress(address: string) {
 }
 
 export function WalletButton() {
+	const [disconnectOpen, setDisconnectOpen] = useState(false);
 	const { address, isConnected } = useAccount();
 	const { connect, connectors, isPending } = useConnect();
 	const { disconnect } = useDisconnect();
@@ -30,9 +42,34 @@ export function WalletButton() {
 			);
 		}
 		return (
-			<Button variant="outline" size="sm" onClick={() => disconnect()}>
-				{shortAddress(address)}
-			</Button>
+			<Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
+				<DialogTrigger render={<Button variant="outline" size="sm" />}>
+					{shortAddress(address)}
+				</DialogTrigger>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Disconnect wallet?</DialogTitle>
+						<DialogDescription>
+							Your wallet will be disconnected from this browser session. Your
+							PasinPay account link remains unchanged.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<DialogClose render={<Button variant="outline" />}>
+							Keep connected
+						</DialogClose>
+						<Button
+							variant="destructive"
+							onClick={() => {
+								disconnect();
+								setDisconnectOpen(false);
+							}}
+						>
+							Disconnect wallet
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		);
 	}
 
