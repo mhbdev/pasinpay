@@ -126,7 +126,7 @@ Run standalone Node/Bun tools that use Varlock from the owning app directory so 
 - Logs: bun run docker:logs
 - Stop: bun run docker:down
 
-Environment variables are read from each app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
+Environment variables are read from the Compose root `.env` when present, with each app's `.env` file as a local-development override. The root file is also mounted as the BuildKit environment secret so Dokploy can build from its generated Compose environment file; it is never committed. Public web variables are baked into the web build, while container networking values are overridden in `docker-compose.yml`.
 
 For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
 

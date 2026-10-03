@@ -70,9 +70,11 @@ jobs:
       - name: Build production Docker images
         shell: bash
         run: |
-          trap 'rm -f apps/web/.env apps/server/.env' EXIT
+          trap 'rm -f .env apps/web/.env apps/server/.env' EXIT
           cp apps/web/.env.example apps/web/.env
           cp apps/server/.env.example apps/server/.env
+          cp apps/server/.env .env
+          cat apps/web/.env >> .env
           docker compose build web server migrate worker
 
   contracts:
