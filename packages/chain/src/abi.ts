@@ -17,7 +17,7 @@ export const escrowAbi = [
 		stateMutability: "nonpayable",
 		inputs: [
 			{ name: "bountyId", type: "uint256" },
-			{ name: "amount", type: "uint128" },
+			{ name: "rewardAmount", type: "uint128" },
 		],
 		outputs: [],
 	},
@@ -82,6 +82,8 @@ export const escrowAbi = [
 		outputs: [
 			{ name: "creator", type: "address" },
 			{ name: "amount", type: "uint128" },
+			{ name: "feeAmount", type: "uint128" },
+			{ name: "totalFunded", type: "uint128" },
 			{ name: "deadline", type: "uint64" },
 			{ name: "reviewWindow", type: "uint64" },
 			{ name: "reviewEnds", type: "uint64" },
@@ -92,6 +94,41 @@ export const escrowAbi = [
 			{ name: "status", type: "uint8" },
 			{ name: "approved", type: "bool" },
 		],
+	},
+	{
+		type: "function",
+		name: "feeBps",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "uint16" }],
+	},
+	{
+		type: "function",
+		name: "feeTreasury",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
+	{
+		type: "function",
+		name: "calculateFee",
+		stateMutability: "view",
+		inputs: [{ name: "rewardAmount", type: "uint128" }],
+		outputs: [{ type: "uint128" }],
+	},
+	{
+		type: "function",
+		name: "setFeeBps",
+		stateMutability: "nonpayable",
+		inputs: [{ name: "newFeeBps", type: "uint16" }],
+		outputs: [],
+	},
+	{
+		type: "function",
+		name: "setFeeTreasury",
+		stateMutability: "nonpayable",
+		inputs: [{ name: "newTreasury", type: "address" }],
+		outputs: [],
 	},
 	{
 		type: "event",
@@ -109,6 +146,17 @@ export const escrowAbi = [
 		name: "BountyFunded",
 		inputs: [
 			{ indexed: true, name: "bountyId", type: "uint256" },
+			{ indexed: false, name: "rewardAmount", type: "uint128" },
+			{ indexed: false, name: "feeAmount", type: "uint128" },
+			{ indexed: false, name: "totalAmount", type: "uint128" },
+		],
+	},
+	{
+		type: "event",
+		name: "PlatformFeePaid",
+		inputs: [
+			{ indexed: true, name: "bountyId", type: "uint256" },
+			{ indexed: true, name: "treasury", type: "address" },
 			{ indexed: false, name: "amount", type: "uint128" },
 		],
 	},

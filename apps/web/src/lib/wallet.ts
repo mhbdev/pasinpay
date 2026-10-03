@@ -33,6 +33,10 @@ export const webChainConfigs: Record<WebChainId, ChainConfig> = {
 				process.env.NEXT_PUBLIC_USDG_ADDRESS ??
 				"0xFFC95faa3d63Cde504a05B567C600B78C0b41892",
 		),
+		feeTreasury: configuredAddress(
+			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
+		),
+		feeBps: 250,
 		explorerUrl: "https://sepolia.arbiscan.io",
 	},
 	[arbitrum.id]: {
@@ -45,6 +49,10 @@ export const webChainConfigs: Record<WebChainId, ChainConfig> = {
 			process.env.NEXT_PUBLIC_MAINNET_USDG_ADDRESS ??
 				"0x004B506865409877C9fA29bfb1ebA929984B9bbC",
 		),
+		feeTreasury: configuredAddress(
+			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
+		),
+		feeBps: 250,
 		explorerUrl: "https://arbiscan.io",
 	},
 };

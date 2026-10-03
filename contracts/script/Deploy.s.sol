@@ -9,8 +9,9 @@ contract Deploy is Script {
         address usdg = vm.envAddress("PASINPAY_USDG_ADDRESS");
         address attestor = vm.envAddress("PASINPAY_ATTESTOR_ADDRESS");
         address owner = vm.envAddress("PASINPAY_OWNER_ADDRESS");
+        address feeTreasury = vm.envAddress("PASINPAY_FEE_TREASURY_ADDRESS");
         vm.startBroadcast();
-        escrow = new PasinPayEscrow(usdg, attestor, owner);
+        escrow = new PasinPayEscrow(usdg, attestor, owner, feeTreasury);
         vm.stopBroadcast();
     }
 }

@@ -70,6 +70,12 @@ export default function ReceiptPage() {
 				</CardHeader>
 				<CardContent className="grid gap-6 sm:grid-cols-2">
 					<div>
+						<p className="text-muted-foreground text-xs">PLATFORM FEE</p>
+						<p className="mt-1 font-medium">
+							<UsdAmount amount={bounty.settlement?.feeAmount ?? "0"} />
+						</p>
+					</div>
+					<div>
 						<p className="text-muted-foreground text-xs">GITHUB</p>
 						<p className="mt-1 flex items-center gap-2 font-medium">
 							<GitPullRequest className="size-4" /> PR #

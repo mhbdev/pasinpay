@@ -21,6 +21,8 @@ export const DEFAULT_CHAIN_CONFIG: ChainConfig = {
 	name: "Arbitrum Sepolia",
 	escrowAddress: "0x0000000000000000000000000000000000000000",
 	usdgAddress: USDG_ARBITRUM_SEPOLIA,
+	feeTreasury: "0x0000000000000000000000000000000000000000",
+	feeBps: 250,
 	explorerUrl: "https://sepolia.arbiscan.io",
 };
 
@@ -29,6 +31,8 @@ export const ARBITRUM_MAINNET_CONFIG: ChainConfig = {
 	name: "Arbitrum One",
 	escrowAddress: "0x0000000000000000000000000000000000000000",
 	usdgAddress: USDG_ARBITRUM_MAINNET,
+	feeTreasury: "0x0000000000000000000000000000000000000000",
+	feeBps: 250,
 	explorerUrl: "https://arbiscan.io",
 };
 
@@ -57,6 +61,12 @@ export function chainConfigFromEnv(
 	const configuredEscrow = isSepolia
 		? (env.PASINPAY_SEPOLIA_ESCROW_ADDRESS ?? env.PASINPAY_ESCROW_ADDRESS)
 		: (env.PASINPAY_MAINNET_ESCROW_ADDRESS ?? env.PASINPAY_ESCROW_ADDRESS);
+	const feeBps = Number(env.PASINPAY_FEE_BPS ?? 250);
+	if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 500) {
+		throw new Error(
+			`Platform fee must be an integer between 0 and 500 bps: ${feeBps}`,
+		);
+	}
 	return {
 		id,
 		name: isSepolia ? "Arbitrum Sepolia" : "Arbitrum One",
@@ -70,6 +80,11 @@ export function chainConfigFromEnv(
 				env.PASINPAY_USDG_ADDRESS ??
 				defaultToken,
 		),
+		feeTreasury: getAddress(
+			env.PASINPAY_FEE_TREASURY_ADDRESS ??
+				"0x0000000000000000000000000000000000000000",
+		),
+		feeBps,
 		explorerUrl: isSepolia
 			? "https://sepolia.arbiscan.io"
 			: "https://arbiscan.io",

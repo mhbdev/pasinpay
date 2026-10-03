@@ -33,6 +33,8 @@ function serializeBounty(row: typeof bounty.$inferSelect) {
 	return {
 		...row,
 		amount: row.amount.toString(),
+		feeAmount: row.feeAmount.toString(),
+		totalFunded: row.totalFunded.toString(),
 		onchainBountyId: row.onchainBountyId?.toString() ?? null,
 	};
 }
@@ -353,6 +355,8 @@ export const bountyRouter = router({
 					name: ctx.chain.name,
 					escrowAddress: ctx.chain.escrowAddress,
 					tokenAddress: ctx.chain.usdgAddress,
+					feeTreasury: ctx.chain.feeTreasury,
+					feeBps: ctx.chain.feeBps,
 					explorerUrl: ctx.chain.explorerUrl,
 				},
 				stats: {
@@ -371,7 +375,11 @@ export const bountyRouter = router({
 					evidence: item.evidence as Record<string, unknown>,
 				})),
 				settlement: settlementRow
-					? { ...settlementRow, amount: settlementRow.amount.toString() }
+					? {
+							...settlementRow,
+							amount: settlementRow.amount.toString(),
+							feeAmount: settlementRow.feeAmount.toString(),
+						}
 					: null,
 			};
 		}),
@@ -430,6 +438,8 @@ export const bountyRouter = router({
 				chainId: z.union([z.literal(421614), z.literal(42161)]),
 				title: z.string().min(1).max(200),
 				amount: z.string().regex(/^\d+$/),
+				feeAmount: z.string().regex(/^\d+$/),
+				totalFunded: z.string().regex(/^\d+$/),
 				deadline: z.coerce.date(),
 				reviewWindowSeconds: z
 					.number()
@@ -468,6 +478,19 @@ export const bountyRouter = router({
 				.limit(1);
 			if (!authorizedRepository)
 				throw new Error("Select a repository installed through the GitHub App");
+			const rewardAmount = BigInt(input.amount);
+			const feeAmount = BigInt(input.feeAmount);
+			const totalFunded = BigInt(input.totalFunded);
+			const expectedFee =
+				(rewardAmount * BigInt(ctx.chain.feeBps)) / BigInt(10_000);
+			if (
+				feeAmount !== expectedFee ||
+				totalFunded !== rewardAmount + feeAmount
+			) {
+				throw new Error(
+					"Funding totals do not match the configured platform fee",
+				);
+			}
 			const [row] = await ctx.db
 				.insert(bounty)
 				.values({
@@ -483,7 +506,9 @@ export const bountyRouter = router({
 					issueUrl: input.issueUrl,
 					creationMode: input.creationMode,
 					title: input.title,
-					amount: BigInt(input.amount),
+					amount: rewardAmount,
+					feeAmount,
+					totalFunded,
 					deadline: input.deadline,
 					reviewWindowSeconds: input.reviewWindowSeconds,
 					status: "Open",
@@ -491,7 +516,9 @@ export const bountyRouter = router({
 				.onConflictDoUpdate({
 					target: bounty.onchainBountyId,
 					set: {
-						amount: BigInt(input.amount),
+						amount: rewardAmount,
+						feeAmount,
+						totalFunded,
 						status: "Open",
 						updatedAt: new Date(),
 					},

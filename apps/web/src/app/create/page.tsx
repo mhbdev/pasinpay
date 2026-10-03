@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useDeferredValue, useState } from "react";
-import { parseEventLogs, parseUnits } from "viem";
+import { formatUnits, parseEventLogs, parseUnits } from "viem";
 import {
 	useAccount,
 	usePublicClient,
@@ -102,6 +102,18 @@ export default function CreateBountyPage() {
 		functionName: "symbol",
 		chainId: chainConfig.id,
 	});
+	const { data: feeBps } = useReadContract({
+		address: chainConfig.escrowAddress,
+		abi: escrowAbi,
+		functionName: "feeBps",
+		chainId: chainConfig.id,
+	});
+	const { data: feeTreasury } = useReadContract({
+		address: chainConfig.escrowAddress,
+		abi: escrowAbi,
+		functionName: "feeTreasury",
+		chainId: chainConfig.id,
+	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
 	const createIssue = useMutation(trpc.bounties.createIssue.mutationOptions());
@@ -126,6 +138,20 @@ export default function CreateBountyPage() {
 	const selectedIssue = issues.data?.find(
 		(issue) => String(issue.number) === issueNumber,
 	);
+	const rewardAmount = (() => {
+		if (decimals === undefined || !amount) return BigInt(0);
+		try {
+			return parseUnits(amount, decimals);
+		} catch {
+			return BigInt(0);
+		}
+	})();
+	const platformFeeBps = typeof feeBps === "number" ? feeBps : undefined;
+	const feeAmount =
+		platformFeeBps === undefined
+			? BigInt(0)
+			: (rewardAmount * BigInt(platformFeeBps)) / BigInt(10_000);
+	const totalFunded = rewardAmount + feeAmount;
 
 	function validate() {
 		if (!address)
@@ -143,7 +169,14 @@ export default function CreateBountyPage() {
 			deadlineDate.getTime() <= Date.now()
 		)
 			return "Choose a deadline in the future.";
-		if (decimals === undefined || tokenSymbol !== "USDG")
+		if (
+			decimals === undefined ||
+			tokenSymbol !== "USDG" ||
+			platformFeeBps === undefined ||
+			platformFeeBps > 500 ||
+			!feeTreasury ||
+			/^0x0{40}$/i.test(feeTreasury)
+		)
 			return "USDG metadata is not available yet. Try again shortly.";
 		return null;
 	}
@@ -153,7 +186,13 @@ export default function CreateBountyPage() {
 		setError(null);
 		const validationError = validate();
 		if (validationError) return setError(validationError);
-		if (!address || !client || decimals === undefined) return;
+		if (
+			!address ||
+			!client ||
+			decimals === undefined ||
+			platformFeeBps === undefined
+		)
+			return;
 		const selectedRepository = repositories.data?.find(
 			(item) => item.fullName === repository,
 		);
@@ -188,7 +227,7 @@ export default function CreateBountyPage() {
 				throw new Error(
 					"GitHub issue details are incomplete. Select or create the issue again.",
 				);
-			const rawAmount = parseUnits(amount, decimals);
+			const rawAmount = rewardAmount;
 			const repositoryHash = selectedRepository.repositoryHash as `0x${string}`;
 			const deadlineSeconds = BigInt(
 				Math.floor(new Date(deadline).getTime() / 1000),
@@ -222,6 +261,8 @@ export default function CreateBountyPage() {
 				chainId: chainConfig.id as 421614 | 42161,
 				title: `[PasinPay #${finalIssueNumber}] ${title.trim() || finalIssueTitle}`,
 				amount: rawAmount.toString(),
+				feeAmount: feeAmount.toString(),
+				totalFunded: totalFunded.toString(),
 				deadline: new Date(Number(deadlineSeconds) * 1000),
 				reviewWindowSeconds: 60,
 			});
@@ -230,7 +271,7 @@ export default function CreateBountyPage() {
 				address: chainConfig.usdgAddress,
 				abi: erc20ApproveAbi,
 				functionName: "approve",
-				args: [chainConfig.escrowAddress, rawAmount],
+				args: [chainConfig.escrowAddress, totalFunded],
 			});
 			await client.waitForTransactionReceipt({ hash: approvalHash });
 			setStep("funding");
@@ -492,7 +533,7 @@ export default function CreateBountyPage() {
 									"Funding bounty…"
 								) : (
 									<>
-										Fund ${amount || "0"} USDG{" "}
+										Fund ${amount || "0"} USDG + fee{" "}
 										<ArrowRight data-icon="inline-end" />
 									</>
 								)}
@@ -515,11 +556,31 @@ export default function CreateBountyPage() {
 								{issueNumber && ` · Issue #${issueNumber}`}
 							</p>
 						</div>
-						<div className="font-semibold text-3xl">
-							${amount || "0"}
-							<span className="ml-2 font-medium text-muted-foreground text-sm">
-								USDG
-							</span>
+						<div className="space-y-2 border-t pt-5 text-sm">
+							<div className="flex justify-between gap-4">
+								<span className="text-muted-foreground">
+									Contributor reward
+								</span>
+								<span className="font-semibold">{amount || "0"} USDG</span>
+							</div>
+							<div className="flex justify-between gap-4 text-muted-foreground">
+								<span>
+									Platform fee ({((platformFeeBps ?? 250) / 100).toFixed(2)}%)
+								</span>
+								<span>
+									{decimals === undefined
+										? "—"
+										: `${formatUnits(feeAmount, decimals)} USDG`}
+								</span>
+							</div>
+							<div className="flex justify-between gap-4 border-t pt-2 font-semibold">
+								<span>Total creator funding</span>
+								<span>
+									{decimals === undefined
+										? "—"
+										: `${formatUnits(totalFunded, decimals)} USDG`}
+								</span>
+							</div>
 						</div>
 						<div className="flex flex-col gap-3 border-t pt-5 text-muted-foreground text-sm">
 							<span className="flex items-center gap-2">
@@ -529,7 +590,8 @@ export default function CreateBountyPage() {
 								<LockKeyhole className="size-4" /> Non-custodial escrow
 							</span>
 							<span className="flex items-center gap-2">
-								<WalletCards className="size-4" /> {chainConfig.name}
+								<WalletCards className="size-4" /> {chainConfig.name} · fee
+								protected by escrow
 							</span>
 						</div>
 						<Link

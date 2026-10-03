@@ -21,18 +21,21 @@ contract PasinPayEscrowTest is Test {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     uint256 internal constant ATTESTOR_PK = 0xA771;
     uint256 internal constant AMOUNT = 500 ether;
+    uint256 internal constant FEE_AMOUNT = AMOUNT * 250 / 10_000;
+    uint256 internal constant TOTAL_AMOUNT = AMOUNT + FEE_AMOUNT;
 
     MockUSDG internal token;
     PasinPayEscrow internal escrow;
     address internal creator = address(0xC0FFEE);
     address internal claimant = address(0xB0B);
     address internal attacker = address(0xBAD);
+    address internal treasury = address(0xFEE);
     address internal attestor;
 
     function setUp() external {
         token = new MockUSDG();
         attestor = vm.addr(ATTESTOR_PK);
-        escrow = new PasinPayEscrow(address(token), attestor, creator);
+        escrow = new PasinPayEscrow(address(token), attestor, creator, treasury);
         token.mint(creator, 10_000 ether);
         vm.prank(creator);
         token.approve(address(escrow), type(uint256).max);
@@ -40,11 +43,19 @@ contract PasinPayEscrowTest is Test {
 
     function testCreateAndFund() external {
         uint256 id = _createFund();
-        (address bountyCreator, uint128 amount,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
+        (
+            address bountyCreator,
+            uint128 amount,
+            uint128 feeAmount,
+            uint128 totalFunded,,,,,,,,
+            PasinPayEscrow.Status status,
+        ) = escrow.bounties(id);
         assertEq(bountyCreator, creator);
         assertEq(amount, AMOUNT);
+        assertEq(feeAmount, FEE_AMOUNT);
+        assertEq(totalFunded, TOTAL_AMOUNT);
         assertEq(uint8(status), uint8(PasinPayEscrow.Status.Funded));
-        assertEq(token.balanceOf(address(escrow)), AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), TOTAL_AMOUNT);
     }
 
     function testCancelOpenBounty() external {
@@ -52,7 +63,7 @@ contract PasinPayEscrowTest is Test {
         uint256 id = escrow.createBounty(keccak256("repo"), 1, uint64(block.timestamp + 1 days), 60);
         vm.prank(creator);
         escrow.cancelBounty(id);
-        (,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
+        (,,,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
         assertEq(uint8(status), uint8(PasinPayEscrow.Status.Cancelled));
         vm.prank(creator);
         vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
@@ -88,9 +99,12 @@ contract PasinPayEscrowTest is Test {
         escrow.finalizeClaim(id);
         vm.warp(block.timestamp + 61);
         uint256 beforeBalance = token.balanceOf(claimant);
+        uint256 beforeTreasury = token.balanceOf(treasury);
         escrow.finalizeClaim(id);
         assertEq(token.balanceOf(claimant), beforeBalance + AMOUNT);
-        (,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
+        assertEq(token.balanceOf(treasury), beforeTreasury + FEE_AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), 0);
+        (,,,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
         assertEq(uint8(status), uint8(PasinPayEscrow.Status.Paid));
         vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
         escrow.finalizeClaim(id);
@@ -126,8 +140,9 @@ contract PasinPayEscrowTest is Test {
         vm.warp(block.timestamp + 2 days);
         uint256 beforeBalance = token.balanceOf(creator);
         escrow.refundExpired(id);
-        assertEq(token.balanceOf(creator), beforeBalance + AMOUNT);
-        (,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
+        assertEq(token.balanceOf(creator), beforeBalance + TOTAL_AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), 0);
+        (,,,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
         assertEq(uint8(status), uint8(PasinPayEscrow.Status.Refunded));
     }
 
@@ -139,10 +154,12 @@ contract PasinPayEscrowTest is Test {
         vm.prank(attacker);
         vm.expectRevert();
         escrow.resolveDispute(id, 5_000);
-        uint256 before = token.balanceOf(claimant) + token.balanceOf(creator) + token.balanceOf(address(escrow));
+        uint256 before = token.balanceOf(claimant) + token.balanceOf(creator) + token.balanceOf(treasury)
+            + token.balanceOf(address(escrow));
         vm.prank(creator);
         escrow.resolveDispute(id, 5_000);
-        uint256 afterBalances = token.balanceOf(claimant) + token.balanceOf(creator) + token.balanceOf(address(escrow));
+        uint256 afterBalances = token.balanceOf(claimant) + token.balanceOf(creator) + token.balanceOf(treasury)
+            + token.balanceOf(address(escrow));
         assertEq(afterBalances, before);
     }
 
@@ -156,16 +173,48 @@ contract PasinPayEscrowTest is Test {
         escrow.setAttestor(address(0x4567));
     }
 
+    function testFullDisputeRefundReturnsRewardAndFee() external {
+        uint256 id = _createFund();
+        _submitClaim(id, claimant, 7, 1);
+        vm.prank(creator);
+        escrow.disputeClaim(id);
+        uint256 creatorBefore = token.balanceOf(creator);
+        vm.prank(creator);
+        escrow.resolveDispute(id, 0);
+        assertEq(token.balanceOf(creator), creatorBefore + TOTAL_AMOUNT);
+        assertEq(token.balanceOf(treasury), 0);
+        assertEq(token.balanceOf(address(escrow)), 0);
+    }
+
+    function testFeeConfigurationIsOwnerControlledAndCapped() external {
+        assertEq(escrow.feeBps(), 250);
+        assertEq(escrow.calculateFee(uint128(10_000)), 250);
+        vm.prank(attacker);
+        vm.expectRevert();
+        escrow.setFeeBps(300);
+        vm.prank(creator);
+        escrow.setFeeBps(500);
+        assertEq(escrow.feeBps(), 500);
+        vm.prank(creator);
+        vm.expectRevert(PasinPayEscrow.FeeTooHigh.selector);
+        escrow.setFeeBps(501);
+        vm.prank(creator);
+        escrow.setFeeTreasury(address(0x1234));
+        assertEq(escrow.feeTreasury(), address(0x1234));
+    }
+
     function testFuzzDisputeSplitPreservesEscrow(uint16 claimantBps) external {
         claimantBps = uint16(bound(claimantBps, 0, 10_000));
         uint256 id = _createFund();
         _submitClaim(id, claimant, 7, 1);
         vm.prank(creator);
         escrow.disputeClaim(id);
-        uint256 before = token.balanceOf(creator) + token.balanceOf(claimant) + token.balanceOf(address(escrow));
+        uint256 before = token.balanceOf(creator) + token.balanceOf(claimant) + token.balanceOf(treasury)
+            + token.balanceOf(address(escrow));
         vm.prank(creator);
         escrow.resolveDispute(id, claimantBps);
-        uint256 afterBalances = token.balanceOf(creator) + token.balanceOf(claimant) + token.balanceOf(address(escrow));
+        uint256 afterBalances = token.balanceOf(creator) + token.balanceOf(claimant) + token.balanceOf(treasury)
+            + token.balanceOf(address(escrow));
         assertEq(afterBalances, before);
     }
 

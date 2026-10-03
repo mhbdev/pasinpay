@@ -2,6 +2,8 @@ export type PublicBounty = {
 	title: string;
 	repository: string;
 	amount: string;
+	feeAmount: string;
+	totalFunded: string;
 	status: string;
 	issueNumber: number;
 	issueTitle: string;

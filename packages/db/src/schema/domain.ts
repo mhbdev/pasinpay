@@ -83,6 +83,12 @@ export const bounty = pgTable(
 		creationMode: text("creation_mode").notNull().default("existing"),
 		title: text("title").notNull(),
 		amount: bigint("amount", { mode: "bigint" }).notNull(),
+		feeAmount: bigint("fee_amount", { mode: "bigint" })
+			.notNull()
+			.default(BigInt(0)),
+		totalFunded: bigint("total_funded", { mode: "bigint" })
+			.notNull()
+			.default(BigInt(0)),
 		deadline: timestamp("deadline").notNull(),
 		reviewWindowSeconds: integer("review_window_seconds").notNull(),
 		reviewEnds: timestamp("review_ends"),
@@ -135,6 +141,9 @@ export const settlement = pgTable(
 			.references(() => bounty.id, { onDelete: "cascade" }),
 		recipient: text("recipient").notNull(),
 		amount: bigint("amount", { mode: "bigint" }).notNull(),
+		feeAmount: bigint("fee_amount", { mode: "bigint" })
+			.notNull()
+			.default(BigInt(0)),
 		transactionHash: text("transaction_hash").notNull().unique(),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 	},

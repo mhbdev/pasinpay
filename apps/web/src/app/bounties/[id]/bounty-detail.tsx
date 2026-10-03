@@ -290,6 +290,18 @@ export default function BountyDetailPage() {
 							</p>
 						</div>
 						<div>
+							<p className="text-muted-foreground text-xs">PLATFORM FEE</p>
+							<p className="mt-1 font-medium">
+								<UsdAmount amount={bounty.feeAmount} />
+							</p>
+						</div>
+						<div>
+							<p className="text-muted-foreground text-xs">TOTAL FUNDED</p>
+							<p className="mt-1 font-medium">
+								<UsdAmount amount={bounty.totalFunded} />
+							</p>
+						</div>
+						<div>
 							<p className="text-muted-foreground text-xs">PARTICIPANTS</p>
 							<p className="mt-1 font-medium">{bounty.stats.participants}</p>
 						</div>

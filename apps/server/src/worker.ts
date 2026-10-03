@@ -57,6 +57,17 @@ const fundedEvent = {
 	name: "BountyFunded",
 	inputs: [
 		{ indexed: true, name: "bountyId", type: "uint256" },
+		{ indexed: false, name: "rewardAmount", type: "uint128" },
+		{ indexed: false, name: "feeAmount", type: "uint128" },
+		{ indexed: false, name: "totalAmount", type: "uint128" },
+	],
+} as const;
+const feePaidEvent = {
+	type: "event",
+	name: "PlatformFeePaid",
+	inputs: [
+		{ indexed: true, name: "bountyId", type: "uint256" },
+		{ indexed: true, name: "treasury", type: "address" },
 		{ indexed: false, name: "amount", type: "uint128" },
 	],
 } as const;
@@ -98,7 +109,7 @@ async function syncChainEvents() {
 				? latest - BigInt(1000)
 				: BigInt(0);
 	if (fromBlock > latest) return;
-	const [paid, refunded, funded, disputed, cancelled, claimSubmitted] =
+	const [paid, refunded, funded, disputed, cancelled, claimSubmitted, feePaid] =
 		await Promise.all([
 			publicClient.getLogs({
 				address: chainConfig.escrowAddress,
@@ -136,12 +147,28 @@ async function syncChainEvents() {
 				fromBlock,
 				toBlock: latest,
 			}),
+			publicClient.getLogs({
+				address: chainConfig.escrowAddress,
+				event: feePaidEvent,
+				fromBlock,
+				toBlock: latest,
+			}),
 		]);
+	const feeByBounty = new Map<bigint, bigint>();
+	for (const log of feePaid)
+		if (log.args.bountyId !== undefined && log.args.amount !== undefined)
+			feeByBounty.set(log.args.bountyId, log.args.amount);
 	for (const log of funded)
 		if (log.args.bountyId !== undefined)
 			await db
 				.update(bounty)
-				.set({ status: "Funded", updatedAt: new Date() })
+				.set({
+					status: "Funded",
+					feeAmount: log.args.feeAmount ?? BigInt(0),
+					totalFunded:
+						log.args.totalAmount ?? log.args.rewardAmount ?? BigInt(0),
+					updatedAt: new Date(),
+				})
 				.where(
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
@@ -194,6 +221,8 @@ async function syncChainEvents() {
 						outputs: [
 							{ name: "creator", type: "address" },
 							{ name: "amount", type: "uint128" },
+							{ name: "feeAmount", type: "uint128" },
+							{ name: "totalFunded", type: "uint128" },
 							{ name: "deadline", type: "uint64" },
 							{ name: "reviewWindow", type: "uint64" },
 							{ name: "reviewEnds", type: "uint64" },
@@ -214,8 +243,8 @@ async function syncChainEvents() {
 				.set({
 					status: "ClaimPending",
 					claimantWallet: log.args.claimant,
-					claimDigest: onchain[8],
-					reviewEnds: new Date(Number(onchain[4]) * 1000),
+					claimDigest: onchain[10],
+					reviewEnds: new Date(Number(onchain[6]) * 1000),
 					updatedAt: new Date(),
 				})
 				.where(
@@ -248,6 +277,7 @@ async function syncChainEvents() {
 						bountyId: row.id,
 						recipient: log.args.recipient,
 						amount: log.args.amount,
+						feeAmount: feeByBounty.get(log.args.bountyId) ?? BigInt(0),
 						transactionHash: log.transactionHash,
 					})
 					.onConflictDoNothing();

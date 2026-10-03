@@ -15,6 +15,8 @@ export type ChainConfig = {
 	name: string;
 	escrowAddress: Address;
 	usdgAddress: Address;
+	feeTreasury: Address;
+	feeBps: number;
 	explorerUrl: string;
 	rpcUrl?: string;
 };
@@ -26,6 +28,8 @@ export type Bounty = {
 	onchainBountyId: bigint;
 	creator: Address;
 	amount: bigint;
+	feeAmount: bigint;
+	totalFunded: bigint;
 	deadline: number;
 	reviewWindow: number;
 	reviewEnds: number | null;
@@ -62,6 +66,7 @@ export type Settlement = {
 	bountyId: bigint;
 	recipient: Address;
 	amount: bigint;
+	feeAmount: bigint;
 	transactionHash: Hex;
 };
 
