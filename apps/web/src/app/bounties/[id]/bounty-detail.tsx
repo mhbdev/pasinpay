@@ -36,6 +36,7 @@ import {
 } from "wagmi";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
+import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
 
 const statusLabels: Record<string, string> = {
@@ -89,6 +90,7 @@ export default function BountyDetailPage() {
 	) {
 		if (!bounty?.onchainBountyId || !client || !address)
 			return setError("Connect the wallet used for this bounty first.");
+		const onchainBountyId = bounty.onchainBountyId;
 		setBusy(functionName);
 		setError(null);
 		try {
@@ -114,34 +116,42 @@ export default function BountyDetailPage() {
 				};
 				const commitHash =
 					`0x${(evidence.commitHash ?? claim.mergeCommitSha).padStart(64, "0")}` as `0x${string}`;
-				const hash = await writeContractAsync({
-					address: chainConfig.escrowAddress,
-					abi: escrowAbi,
-					functionName,
-					args: [
-						BigInt(bounty.onchainBountyId),
-						address,
-						BigInt(evidence.prNumber ?? claim.githubPrNumber),
-						commitHash,
-						BigInt(
-							Math.floor(new Date(claim.attestationExpiresAt).getTime() / 1000),
-						),
-						BigInt(claim.attestationNonce),
-						claim.attestationSignature as `0x${string}`,
-					],
-				});
+				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
+					writeContractAsync({
+						address: chainConfig.escrowAddress,
+						abi: escrowAbi,
+						functionName,
+						args: [
+							BigInt(onchainBountyId),
+							address,
+							BigInt(evidence.prNumber ?? claim.githubPrNumber),
+							commitHash,
+							BigInt(
+								Math.floor(
+									new Date(claim.attestationExpiresAt).getTime() / 1000,
+								),
+							),
+							BigInt(claim.attestationNonce),
+							claim.attestationSignature as `0x${string}`,
+						],
+						...fees,
+					}),
+				);
 				await client.waitForTransactionReceipt({ hash });
 			} else {
 				if (bounty.creatorWallet.toLowerCase() !== address.toLowerCase())
 					throw new Error(
 						"Only the bounty creator can approve or finalize this claim.",
 					);
-				const hash = await writeContractAsync({
-					address: chainConfig.escrowAddress,
-					abi: escrowAbi,
-					functionName,
-					args: [BigInt(bounty.onchainBountyId)],
-				});
+				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
+					writeContractAsync({
+						address: chainConfig.escrowAddress,
+						abi: escrowAbi,
+						functionName,
+						args: [BigInt(onchainBountyId)],
+						...fees,
+					}),
+				);
 				await client.waitForTransactionReceipt({ hash });
 			}
 			await Promise.all([

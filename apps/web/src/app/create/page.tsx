@@ -49,6 +49,7 @@ import {
 import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
+import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
 
 const erc20ApproveAbi = [
@@ -233,12 +234,15 @@ export default function CreateBountyPage() {
 				Math.floor(new Date(deadline).getTime() / 1000),
 			);
 			setStep("creating");
-			const creationHash = await writeContractAsync({
-				address: chainConfig.escrowAddress,
-				abi: escrowAbi,
-				functionName: "createBounty",
-				args: [repositoryHash, finalIssueNumber, deadlineSeconds, BigInt(60)],
-			});
+			const creationHash = await writeWithFreshEip1559Fees(client, (fees) =>
+				writeContractAsync({
+					address: chainConfig.escrowAddress,
+					abi: escrowAbi,
+					functionName: "createBounty",
+					args: [repositoryHash, finalIssueNumber, deadlineSeconds, BigInt(60)],
+					...fees,
+				}),
+			);
 			const creationReceipt = await client.waitForTransactionReceipt({
 				hash: creationHash,
 			});
@@ -267,20 +271,26 @@ export default function CreateBountyPage() {
 				reviewWindowSeconds: 60,
 			});
 			setStep("approving");
-			const approvalHash = await writeContractAsync({
-				address: chainConfig.usdgAddress,
-				abi: erc20ApproveAbi,
-				functionName: "approve",
-				args: [chainConfig.escrowAddress, totalFunded],
-			});
+			const approvalHash = await writeWithFreshEip1559Fees(client, (fees) =>
+				writeContractAsync({
+					address: chainConfig.usdgAddress,
+					abi: erc20ApproveAbi,
+					functionName: "approve",
+					args: [chainConfig.escrowAddress, totalFunded],
+					...fees,
+				}),
+			);
 			await client.waitForTransactionReceipt({ hash: approvalHash });
 			setStep("funding");
-			const fundingHash = await writeContractAsync({
-				address: chainConfig.escrowAddress,
-				abi: escrowAbi,
-				functionName: "fundBounty",
-				args: [created.args.bountyId, rawAmount],
-			});
+			const fundingHash = await writeWithFreshEip1559Fees(client, (fees) =>
+				writeContractAsync({
+					address: chainConfig.escrowAddress,
+					abi: escrowAbi,
+					functionName: "fundBounty",
+					args: [created.args.bountyId, rawAmount],
+					...fees,
+				}),
+			);
 			await client.waitForTransactionReceipt({ hash: fundingHash });
 			await syncStatus.mutateAsync({
 				onchainBountyId: created.args.bountyId.toString(),
