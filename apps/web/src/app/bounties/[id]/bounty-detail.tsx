@@ -86,7 +86,13 @@ export default function BountyDetailPage() {
 	}
 
 	async function call(
-		functionName: "submitClaim" | "approveClaim" | "finalizeClaim",
+		functionName:
+			| "submitClaim"
+			| "approveClaim"
+			| "finalizeClaim"
+			| "disputeClaim"
+			| "refundExpired"
+			| "cancelBounty",
 	) {
 		if (!bounty?.onchainBountyId || !client || !address)
 			return setError("Connect the wallet used for this bounty first.");
@@ -138,11 +144,20 @@ export default function BountyDetailPage() {
 					}),
 				);
 				await client.waitForTransactionReceipt({ hash });
+			} else if (functionName === "refundExpired") {
+				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
+					writeContractAsync({
+						address: chainConfig.escrowAddress,
+						abi: escrowAbi,
+						functionName,
+						args: [BigInt(onchainBountyId)],
+						...fees,
+					}),
+				);
+				await client.waitForTransactionReceipt({ hash });
 			} else {
 				if (bounty.creatorWallet.toLowerCase() !== address.toLowerCase())
-					throw new Error(
-						"Only the bounty creator can approve or finalize this claim.",
-					);
+					throw new Error("Only the bounty creator can manage this bounty.");
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
 						address: chainConfig.escrowAddress,
@@ -205,6 +220,25 @@ export default function BountyDetailPage() {
 		bounty.issueUrl ||
 		`https://github.com/${bounty.repository}/issues/${bounty.issueNumber}`;
 	const latestClaim = bounty.claims?.[0] ?? claim;
+	const isCreator =
+		Boolean(address) &&
+		address?.toLowerCase() === bounty.creatorWallet.toLowerCase();
+	const isExpired = new Date(bounty.deadline).getTime() <= Date.now();
+	const reviewClosed =
+		Boolean(bounty.reviewEnds) &&
+		new Date(bounty.reviewEnds ?? 0).getTime() <= Date.now();
+	const pullRequestUrl =
+		"https://github.com/" +
+		bounty.repository +
+		"/compare?expand=1&title=" +
+		encodeURIComponent("[PasinPay #" + bounty.issueNumber + "] ") +
+		"&body=" +
+		encodeURIComponent(
+			"Closes #" +
+				bounty.issueNumber +
+				"\n\nPasinPay bounty: " +
+				(typeof window === "undefined" ? "" : window.location.href),
+		);
 	return (
 		<main className="mx-auto grid w-full max-w-6xl gap-8 px-5 py-12 lg:grid-cols-[1fr_360px]">
 			<div className="flex flex-col gap-8">
@@ -401,49 +435,72 @@ export default function BountyDetailPage() {
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-4">
-						{bounty.claims?.length ? (
-							bounty.claims.map((item) => {
-								const evidence = item.evidence as {
-									prUrl?: string;
-									authorLogin?: string;
-								};
+						{bounty.pullRequests?.length ? (
+							bounty.pullRequests.map((pullRequest) => {
+								const verifiedClaim = bounty.claims?.find(
+									(item) => item.githubPrNumber === pullRequest.number,
+								);
 								return (
 									<div
-										className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 last:border-0 last:pb-0"
-										key={item.id}
+										className="flex flex-wrap items-start justify-between gap-4 border-b pb-4 last:border-0 last:pb-0"
+										key={pullRequest.number}
 									>
-										<div>
-											<p className="font-medium">
-												PR #{item.githubPrNumber} ·{" "}
-												{evidence.authorLogin ?? "Contributor"}
+										<div className="min-w-0">
+											<div className="flex flex-wrap items-center gap-2">
+												<a
+													className="truncate font-medium hover:underline"
+													href={pullRequest.htmlUrl}
+													target="_blank"
+													rel="noreferrer"
+												>
+													PR #{pullRequest.number} · {pullRequest.title}
+												</a>
+												<span className="rounded-full border px-2 py-0.5 font-medium text-[11px]">
+													{pullRequest.status.toUpperCase()}
+												</span>
+											</div>
+											<p className="mt-1 text-muted-foreground text-xs">
+												{pullRequest.authorLogin
+													? "@" + pullRequest.authorLogin
+													: "Unknown contributor"}
+												{" · "}
+												{pullRequest.status === "Open"
+													? "Awaiting merge"
+													: pullRequest.status === "Merged"
+														? "Merged · verification pending"
+														: pullRequest.status === "Verified"
+															? "Verified evidence"
+															: "Closed"}
 											</p>
-											<p className="font-mono text-muted-foreground text-xs">
-												{item.claimantWallet.slice(0, 10)}…
-												{item.claimantWallet.slice(-8)}
-											</p>
+											{verifiedClaim && (
+												<p className="mt-1 font-mono text-muted-foreground text-xs">
+													Payout wallet{" "}
+													{verifiedClaim.claimantWallet.slice(0, 10)}…
+													{verifiedClaim.claimantWallet.slice(-8)}
+												</p>
+											)}
 										</div>
-										{evidence.prUrl && (
-											<Button
-												size="sm"
-												variant="outline"
-												render={
-													<a
-														href={evidence.prUrl}
-														target="_blank"
-														rel="noreferrer"
-													/>
-												}
-											>
-												View PR <ExternalLink data-icon="inline-end" />
-											</Button>
-										)}
+										<Button
+											size="sm"
+											variant="outline"
+											render={
+												<a
+													href={pullRequest.htmlUrl}
+													target="_blank"
+													rel="noreferrer"
+												/>
+											}
+										>
+											View PR <ExternalLink data-icon="inline-end" />
+										</Button>
 									</div>
 								);
 							})
 						) : (
 							<p className="text-muted-foreground text-sm">
-								No verified submissions yet. The first matching merged PR will
-								appear here.
+								No matching pull requests yet. Open a PR that references this
+								issue and uses the [PasinPay #{bounty.issueNumber}] title
+								marker.
 							</p>
 						)}
 					</CardContent>
@@ -521,7 +578,16 @@ export default function BountyDetailPage() {
 									<ArrowUpRight data-icon="inline-end" />
 								</Button>
 							)}
-						{bounty.status === "ClaimPending" && (
+						{bounty.status === "ClaimPending" && isCreator && !reviewClosed && (
+							<Button
+								variant="outline"
+								disabled={Boolean(busy)}
+								onClick={() => call("disputeClaim")}
+							>
+								{busy === "disputeClaim" ? "Opening dispute…" : "Dispute claim"}
+							</Button>
+						)}
+						{bounty.status === "ClaimPending" && reviewClosed && (
 							<Button
 								variant="outline"
 								disabled={Boolean(busy)}
@@ -541,13 +607,35 @@ export default function BountyDetailPage() {
 									: "Finalize after review"}
 							</Button>
 						)}
+						{bounty.status === "Open" && isCreator && (
+							<Button
+								variant="outline"
+								disabled={Boolean(busy)}
+								onClick={() => call("cancelBounty")}
+							>
+								{busy === "cancelBounty" ? "Cancelling…" : "Cancel bounty"}
+							</Button>
+						)}
+						{(bounty.status === "Funded" || bounty.status === "ClaimPending") &&
+							isExpired &&
+							isCreator && (
+								<Button
+									variant="outline"
+									disabled={Boolean(busy)}
+									onClick={() => call("refundExpired")}
+								>
+									{busy === "refundExpired"
+										? "Refunding…"
+										: "Refund expired bounty"}
+								</Button>
+							)}
 						{bounty.status === "Paid" && (
 							<Button render={<Link href={`/receipts/${bounty.id}`} />}>
 								View settlement <ExternalLink data-icon="inline-end" />
 							</Button>
 						)}
 						{error && <p className="text-destructive text-sm">{error}</p>}
-						<p className="flex items-center gap-2 border-t pt-4 text-muted-foreground text-xs">
+						<p className="flex items-center gap-2 text-muted-foreground text-xs">
 							<Clock3 className="size-3.5" /> Creator approval and review
 							required
 						</p>
@@ -558,13 +646,21 @@ export default function BountyDetailPage() {
 						<p className="flex items-center gap-2 font-medium">
 							<GitPullRequest className="size-4" /> How to claim
 						</p>
-						<p className="text-muted-foreground leading-6">
+						<p className="cursor-text select-text rounded-md text-muted-foreground leading-6 transition-colors hover:bg-muted/60">
 							Open a PR with{" "}
-							<span className="font-mono text-xs">
+							<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
 								[PasinPay #{bounty.issueNumber}]
-							</span>{" "}
+							</code>{" "}
 							in the title. Once merged, PasinPay verifies the evidence.
 						</p>
+						<Button
+							size="sm"
+							render={
+								<a href={pullRequestUrl} target="_blank" rel="noreferrer" />
+							}
+						>
+							Start a pull request <ArrowUpRight data-icon="inline-end" />
+						</Button>
 					</CardContent>
 				</Card>
 			</aside>

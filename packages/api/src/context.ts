@@ -26,6 +26,22 @@ export type GitHubService = {
 			updated_at: string;
 		}>
 	>;
+	listRepositoryPullRequests: (
+		installationId: string,
+		repository: string,
+		issueNumber: number,
+	) => Promise<
+		Array<{
+			number: number;
+			title: string;
+			state: "open" | "closed";
+			merged_at: string | null;
+			merge_commit_sha: string | null;
+			html_url: string;
+			updated_at: string;
+			user: { login: string; id: number } | null;
+		}>
+	>;
 	createIssue: (
 		installationId: string,
 		repository: string,

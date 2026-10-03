@@ -76,6 +76,13 @@ export const escrowAbi = [
 	},
 	{
 		type: "function",
+		name: "cancelBounty",
+		stateMutability: "nonpayable",
+		inputs: [{ name: "bountyId", type: "uint256" }],
+		outputs: [],
+	},
+	{
+		type: "function",
 		name: "bounties",
 		stateMutability: "view",
 		inputs: [{ name: "", type: "uint256" }],

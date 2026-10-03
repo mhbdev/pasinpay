@@ -10,6 +10,7 @@ import {
 	listAppInstallations,
 	listInstallationRepositories,
 	listRepositoryIssues,
+	listRepositoryPullRequests,
 } from "./lib/github";
 
 export const db = createDb(ENV);
@@ -26,6 +27,7 @@ export const githubService = {
 	listAppInstallations,
 	listInstallationRepositories,
 	listRepositoryIssues,
+	listRepositoryPullRequests,
 	createIssue,
 	linkIssue,
 };

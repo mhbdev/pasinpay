@@ -348,6 +348,84 @@ export const bountyRouter = router({
 				.from(claim)
 				.where(eq(claim.bountyId, row.id))
 				.orderBy(desc(claim.createdAt));
+			const [repositoryInstallation] = await ctx.db
+				.select({ installationId: githubInstallation.installationId })
+				.from(repository)
+				.innerJoin(
+					githubInstallation,
+					eq(repository.installationId, githubInstallation.id),
+				)
+				.where(sql`lower(${repository.fullName}) = lower(${row.repository})`)
+				.limit(1);
+
+			const claimByPrNumber = new Map(
+				claimRows.map((item) => [item.githubPrNumber, item]),
+			);
+			let pullRequests: Array<{
+				number: number;
+				title: string;
+				state: "open" | "closed";
+				mergedAt: string | null;
+				mergeCommitSha: string | null;
+				htmlUrl: string;
+				updatedAt: string;
+				authorLogin: string | null;
+				status: "Open" | "Closed" | "Merged" | "Verified";
+			}> = [];
+			if (repositoryInstallation) {
+				try {
+					const issuePullRequests = await ctx.github.listRepositoryPullRequests(
+						repositoryInstallation.installationId,
+						row.repository,
+						row.issueNumber,
+					);
+					const marker = new RegExp(
+						`\\[PasinPay\\s+#${row.issueNumber}\\]`,
+						"i",
+					);
+					pullRequests = issuePullRequests
+						.filter(
+							(item) =>
+								marker.test(item.title) || claimByPrNumber.has(item.number),
+						)
+						.map((item) => ({
+							number: item.number,
+							title: item.title,
+							state: item.state,
+							mergedAt: item.merged_at,
+							mergeCommitSha: item.merge_commit_sha,
+							htmlUrl: item.html_url,
+							updatedAt: item.updated_at,
+							authorLogin: item.user?.login ?? null,
+							status: claimByPrNumber.has(item.number)
+								? "Verified"
+								: item.merged_at
+									? "Merged"
+									: item.state === "closed"
+										? "Closed"
+										: "Open",
+						}));
+				} catch {
+					// A public bounty page must remain available if GitHub is
+					// temporarily unavailable. Claims remain authoritative.
+					pullRequests = [];
+				}
+			}
+			const contributorKeys = [
+				...pullRequests.map(
+					(item) =>
+						`github:${item.authorLogin?.toLowerCase() ?? `pr:${item.number}`}`,
+				),
+				...claimRows.map(
+					(item) => `wallet:${item.claimantWallet.toLowerCase()}`,
+				),
+			];
+			const existingParticipantCount = new Set(
+				[
+					row.creatorWallet,
+					...claimRows.map((item) => item.claimantWallet),
+				].map((address) => address.toLowerCase()),
+			).size;
 			return {
 				...serializeBounty(row),
 				chain: {
@@ -360,15 +438,13 @@ export const bountyRouter = router({
 					explorerUrl: ctx.chain.explorerUrl,
 				},
 				stats: {
-					participants: new Set(
-						[
-							row.creatorWallet,
-							...claimRows.map((item) => item.claimantWallet),
-						].map((address) => address.toLowerCase()),
-					).size,
-					submissions: claimRows.length,
-					linkedPullRequests: claimRows.length,
+					participants: contributorKeys.length
+						? new Set(contributorKeys).size
+						: existingParticipantCount,
+					submissions: pullRequests.length,
+					linkedPullRequests: pullRequests.length,
 				},
+				pullRequests,
 				claims: claimRows.map((item) => ({
 					...item,
 					attestationNonce: item.attestationNonce.toString(),

@@ -27,6 +27,17 @@ export type GitHubIssue = {
 	updated_at: string;
 };
 
+export type GitHubPullRequest = {
+	number: number;
+	title: string;
+	state: "open" | "closed";
+	merged_at: string | null;
+	merge_commit_sha: string | null;
+	html_url: string;
+	updated_at: string;
+	user: { login: string; id: number } | null;
+};
+
 export function normalizeGitHubIssues(payload: unknown): GitHubIssue[] {
 	if (Array.isArray(payload)) return payload as GitHubIssue[];
 	if (
@@ -169,6 +180,31 @@ export async function listRepositoryIssues(
 				`${issue.number} ${issue.title}`.toLowerCase().includes(normalized),
 		)
 		.slice(0, 50);
+}
+
+/**
+ * GitHub's issue pulls endpoint returns every PR associated with an issue,
+ * including PRs that are still open. That makes it the source for the public
+ * participation feed; merge/attestation state is derived separately by the
+ * bounty API from our durable claim records.
+ */
+export async function listRepositoryPullRequests(
+	installationId: string,
+	repository: string,
+	issueNumber: number,
+) {
+	const token = await createInstallationToken(installationId);
+	const pullRequests = await githubRequest<GitHubPullRequest[]>(
+		`/repos/${repository}/issues/${issueNumber}/pulls?per_page=100`,
+		token,
+	);
+	return pullRequests
+		.filter((pullRequest) => Number.isInteger(pullRequest.number))
+		.sort(
+			(left, right) =>
+				new Date(right.updated_at).getTime() -
+				new Date(left.updated_at).getTime(),
+		);
 }
 
 export async function createIssue(
