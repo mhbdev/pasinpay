@@ -27,6 +27,19 @@ export type GitHubIssue = {
 	updated_at: string;
 };
 
+export function normalizeGitHubIssues(payload: unknown): GitHubIssue[] {
+	if (Array.isArray(payload)) return payload as GitHubIssue[];
+	if (
+		payload &&
+		typeof payload === "object" &&
+		"items" in payload &&
+		Array.isArray(payload.items)
+	) {
+		return payload.items as GitHubIssue[];
+	}
+	return [];
+}
+
 function required(name: string, value: string | undefined) {
 	if (!value) throw new Error(`${name} is not configured`);
 	return value;
@@ -143,10 +156,11 @@ export async function listRepositoryIssues(
 	search = "",
 ) {
 	const token = await createInstallationToken(installationId);
-	const result = await githubRequest<GitHubIssue[]>(
+	const payload = await githubRequest<unknown>(
 		`/repos/${repository}/issues?state=open&per_page=100&sort=updated&direction=desc`,
 		token,
 	);
+	const result = normalizeGitHubIssues(payload);
 	const normalized = search.trim().toLowerCase();
 	return result
 		.filter(
