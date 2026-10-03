@@ -142,25 +142,45 @@ async function syncChainEvents() {
 			await db
 				.update(bounty)
 				.set({ status: "Funded", updatedAt: new Date() })
-				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				);
 	for (const log of refunded)
 		if (log.args.bountyId !== undefined)
 			await db
 				.update(bounty)
 				.set({ status: "Refunded", updatedAt: new Date() })
-				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				);
 	for (const log of disputed)
 		if (log.args.bountyId !== undefined)
 			await db
 				.update(bounty)
 				.set({ status: "Disputed", updatedAt: new Date() })
-				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				);
 	for (const log of cancelled)
 		if (log.args.bountyId !== undefined)
 			await db
 				.update(bounty)
 				.set({ status: "Cancelled", updatedAt: new Date() })
-				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				);
 	for (const log of claimSubmitted)
 		if (log.args.bountyId !== undefined && log.args.claimant) {
 			const onchain = await publicClient.readContract({
@@ -198,7 +218,12 @@ async function syncChainEvents() {
 					reviewEnds: new Date(Number(onchain[4]) * 1000),
 					updatedAt: new Date(),
 				})
-				.where(eq(bounty.onchainBountyId, log.args.bountyId));
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				);
 		}
 	for (const log of paid)
 		if (log.args.bountyId !== undefined && log.args.recipient) {
@@ -209,7 +234,12 @@ async function syncChainEvents() {
 					claimantWallet: log.args.recipient,
 					updatedAt: new Date(),
 				})
-				.where(eq(bounty.onchainBountyId, log.args.bountyId))
+				.where(
+					and(
+						eq(bounty.onchainBountyId, log.args.bountyId),
+						eq(bounty.chainId, chainConfig.id),
+					),
+				)
 				.returning();
 			if (row && log.args.amount !== undefined && log.transactionHash)
 				await db
@@ -278,6 +308,7 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 			and(
 				eq(bounty.repository, repository),
 				eq(bounty.issueNumber, Number(bountyNumber)),
+				eq(bounty.chainId, chainConfig.id),
 				eq(bounty.status, "Funded"),
 			),
 		)

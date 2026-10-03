@@ -8,7 +8,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ExternalLink,
 	GitBranch,
@@ -31,10 +31,19 @@ export default function SettingsPage() {
 	const { connectAsync, connectors } = useConnect();
 	const { signMessageAsync } = useSignMessage();
 	const { switchChainAsync } = useSwitchChain();
+	const queryClient = useQueryClient();
 	const challenge = useMutation(
 		trpc.bounties.walletChallenge.mutationOptions(),
 	);
 	const linkWallet = useMutation(trpc.bounties.linkWallet.mutationOptions());
+	const wallet = useQuery(
+		trpc.bounties.walletLink.queryOptions(undefined, {
+			enabled: isAuthenticated,
+		}),
+	);
+	const unlinkWallet = useMutation(
+		trpc.bounties.unlinkWallet.mutationOptions(),
+	);
 	const githubApp = useQuery(
 		trpc.bounties.githubApp.queryOptions(undefined, {
 			enabled: isAuthenticated,
@@ -52,9 +61,14 @@ export default function SettingsPage() {
 	);
 	const refreshRepositories = useMutation({
 		...trpc.bounties.refreshRepositories.mutationOptions(),
-		onSuccess: () => repositories.refetch(),
+		onSuccess: async (result) => {
+			await repositories.refetch();
+			setMessage(`Synced ${result.synced} installed repositories.`);
+		},
+		onError: (error) => setMessage(error.message),
 	});
 	const [message, setMessage] = useState<string | null>(null);
+	const walletIsLinked = Boolean(wallet.data);
 
 	async function connectWallet() {
 		try {
@@ -91,10 +105,27 @@ export default function SettingsPage() {
 				chainId: linkedChainId,
 				signature,
 			});
+			await queryClient.invalidateQueries({
+				queryKey: trpc.bounties.walletLink.queryKey(),
+			});
 			setMessage("Wallet linked successfully.");
 		} catch (error) {
 			setMessage(
 				error instanceof Error ? error.message : "Wallet linking failed.",
+			);
+		}
+	}
+
+	async function unlinkLinkedWallet() {
+		try {
+			await unlinkWallet.mutateAsync();
+			await queryClient.invalidateQueries({
+				queryKey: trpc.bounties.walletLink.queryKey(),
+			});
+			setMessage("Wallet unlinked successfully.");
+		} catch (error) {
+			setMessage(
+				error instanceof Error ? error.message : "Wallet unlinking failed.",
 			);
 		}
 	}
@@ -173,7 +204,10 @@ export default function SettingsPage() {
 								<Button
 									variant="outline"
 									onClick={() => refreshRepositories.mutate()}
-									disabled={refreshRepositories.isPending}
+									disabled={
+										refreshRepositories.isPending ||
+										!githubStatus.data?.connected
+									}
 								>
 									<RefreshCw data-icon="inline-start" />
 									{refreshRepositories.isPending
@@ -205,9 +239,11 @@ export default function SettingsPage() {
 						<CardContent className="flex items-center justify-between gap-4 border-t">
 							<div>
 								<p className="font-mono text-sm">
-									{address
-										? `${address.slice(0, 8)}…${address.slice(-6)}`
-										: "No wallet connected"}
+									{wallet.data?.walletAddress
+										? `${wallet.data.walletAddress.slice(0, 8)}…${wallet.data.walletAddress.slice(-6)}`
+										: address
+											? `${address.slice(0, 8)}…${address.slice(-6)}`
+											: "No wallet connected"}
 								</p>
 								<p className="mt-1 text-muted-foreground text-sm">
 									{chainId === 42161
@@ -218,16 +254,25 @@ export default function SettingsPage() {
 								</p>
 							</div>
 							<Button
-								onClick={connectWallet}
+								onClick={walletIsLinked ? unlinkLinkedWallet : connectWallet}
 								disabled={
-									!session?.user || challenge.isPending || linkWallet.isPending
+									!session?.user ||
+									challenge.isPending ||
+									linkWallet.isPending ||
+									unlinkWallet.isPending
 								}
 							>
-								{challenge.isPending || linkWallet.isPending
-									? "Linking…"
-									: address
-										? "Link wallet"
-										: "Connect & link wallet"}
+								{challenge.isPending ||
+								linkWallet.isPending ||
+								unlinkWallet.isPending
+									? walletIsLinked
+										? "Unlinking…"
+										: "Linking…"
+									: walletIsLinked
+										? "Unlink wallet"
+										: address
+											? "Link wallet"
+											: "Connect & link wallet"}
 							</Button>
 						</CardContent>
 					</Card>

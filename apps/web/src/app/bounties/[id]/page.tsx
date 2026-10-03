@@ -164,6 +164,11 @@ export default function BountyDetailPage() {
 				: bounty.status === "ClaimPending"
 					? 5
 					: 5;
+	const chain = bounty.chain;
+	const issueUrl =
+		bounty.issueUrl ||
+		`https://github.com/${bounty.repository}/issues/${bounty.issueNumber}`;
+	const latestClaim = bounty.claims?.[0] ?? claim;
 	return (
 		<main className="mx-auto grid w-full max-w-6xl gap-8 px-5 py-12 lg:grid-cols-[1fr_360px]">
 			<div className="flex flex-col gap-8">
@@ -188,7 +193,56 @@ export default function BountyDetailPage() {
 							{status}
 						</div>
 					</div>
+					<div className="flex flex-wrap gap-2">
+						<Button
+							size="sm"
+							variant="outline"
+							render={<a href={issueUrl} target="_blank" rel="noreferrer" />}
+						>
+							Open GitHub issue <ExternalLink data-icon="inline-end" />
+						</Button>
+						<Button
+							size="sm"
+							variant="ghost"
+							render={
+								<a
+									href={`https://github.com/${bounty.repository}`}
+									target="_blank"
+									rel="noreferrer"
+								/>
+							}
+						>
+							{bounty.repository} <ExternalLink data-icon="inline-end" />
+						</Button>
+					</div>
 				</div>
+				<Card>
+					<CardHeader className="border-b">
+						<CardTitle className="text-base">Bounty overview</CardTitle>
+					</CardHeader>
+					<CardContent className="grid gap-5 sm:grid-cols-3">
+						<div>
+							<p className="text-muted-foreground text-xs">REWARD</p>
+							<p className="mt-1 font-medium">
+								<UsdAmount amount={bounty.amount} />
+							</p>
+						</div>
+						<div>
+							<p className="text-muted-foreground text-xs">PARTICIPANTS</p>
+							<p className="mt-1 font-medium">{bounty.stats.participants}</p>
+						</div>
+						<div>
+							<p className="text-muted-foreground text-xs">SUBMISSIONS</p>
+							<p className="mt-1 font-medium">{bounty.stats.submissions}</p>
+						</div>
+						<div className="sm:col-span-3">
+							<p className="text-muted-foreground text-xs">ISSUE</p>
+							<p className="mt-1 font-medium">
+								#{bounty.issueNumber} · {bounty.issueTitle || bounty.title}
+							</p>
+						</div>
+					</CardContent>
+				</Card>
 				<Card>
 					<CardHeader className="border-b">
 						<CardTitle className="text-base">Progress</CardTitle>
@@ -231,14 +285,16 @@ export default function BountyDetailPage() {
 						<div>
 							<p className="text-muted-foreground text-xs">PULL REQUEST</p>
 							<p className="mt-1 font-medium">
-								{claim ? `PR #${claim.githubPrNumber}` : "Waiting for merge"}
+								{latestClaim
+									? `PR #${latestClaim.githubPrNumber}`
+									: "Waiting for merge"}
 							</p>
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">MERGE COMMIT</p>
 							<p className="mt-1 font-mono text-xs">
-								{claim?.mergeCommitSha
-									? `${claim.mergeCommitSha.slice(0, 10)}…`
+								{latestClaim?.mergeCommitSha
+									? `${latestClaim.mergeCommitSha.slice(0, 10)}…`
 									: "—"}
 							</p>
 						</div>
@@ -248,8 +304,114 @@ export default function BountyDetailPage() {
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">NETWORK</p>
-							<p className="mt-1 font-medium">{chainConfig.name}</p>
+							<p className="mt-1 font-medium">
+								{chain?.name ?? chainConfig.name}
+							</p>
 						</div>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardHeader className="border-b">
+						<CardTitle className="text-base">
+							Submissions and participants
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="flex flex-col gap-4">
+						{bounty.claims?.length ? (
+							bounty.claims.map((item) => {
+								const evidence = item.evidence as {
+									prUrl?: string;
+									authorLogin?: string;
+								};
+								return (
+									<div
+										className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 last:border-0 last:pb-0"
+										key={item.id}
+									>
+										<div>
+											<p className="font-medium">
+												PR #{item.githubPrNumber} ·{" "}
+												{evidence.authorLogin ?? "Contributor"}
+											</p>
+											<p className="font-mono text-muted-foreground text-xs">
+												{item.claimantWallet.slice(0, 10)}…
+												{item.claimantWallet.slice(-8)}
+											</p>
+										</div>
+										{evidence.prUrl && (
+											<Button
+												size="sm"
+												variant="outline"
+												render={
+													<a
+														href={evidence.prUrl}
+														target="_blank"
+														rel="noreferrer"
+													/>
+												}
+											>
+												View PR <ExternalLink data-icon="inline-end" />
+											</Button>
+										)}
+									</div>
+								);
+							})
+						) : (
+							<p className="text-muted-foreground text-sm">
+								No verified submissions yet. The first matching merged PR will
+								appear here.
+							</p>
+						)}
+					</CardContent>
+				</Card>
+				<Card>
+					<CardHeader className="border-b">
+						<CardTitle className="text-base">On-chain details</CardTitle>
+					</CardHeader>
+					<CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+						<div>
+							<p className="text-muted-foreground text-xs">BOUNTY ID</p>
+							<p className="mt-1 font-mono">
+								{bounty.onchainBountyId ?? "Pending"}
+							</p>
+						</div>
+						<div>
+							<p className="text-muted-foreground text-xs">TOKEN</p>
+							<a
+								className="mt-1 block font-mono text-xs underline"
+								href={`${chain?.explorerUrl}/address/${chain?.tokenAddress}`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								{chain?.tokenAddress}
+							</a>
+						</div>
+						<div className="sm:col-span-2">
+							<p className="text-muted-foreground text-xs">ESCROW CONTRACT</p>
+							<a
+								className="mt-1 block break-all font-mono text-xs underline"
+								href={`${chain?.explorerUrl}/address/${chain?.escrowAddress}`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								{chain?.escrowAddress}
+							</a>
+						</div>
+						{bounty.settlement?.transactionHash && (
+							<div className="sm:col-span-2">
+								<p className="text-muted-foreground text-xs">
+									SETTLEMENT TRANSACTION
+								</p>
+								<a
+									className="mt-1 block break-all font-mono text-xs underline"
+									href={`${chain?.explorerUrl}/tx/${bounty.settlement.transactionHash}`}
+									target="_blank"
+									rel="noreferrer"
+								>
+									{bounty.settlement.transactionHash}
+								</a>
+							</div>
+						)}
 					</CardContent>
 				</Card>
 			</div>

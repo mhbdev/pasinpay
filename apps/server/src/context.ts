@@ -1,7 +1,7 @@
 import type { Context as ApiContext } from "@pasinpay/api/context";
 import type { Context as HonoContext } from "hono";
 
-import { auth, db, githubService } from "./services";
+import { auth, chainConfig, db, githubService } from "./services";
 
 export type CreateContextOptions = {
 	context: HonoContext;
@@ -17,6 +17,7 @@ export async function createContext({
 		db,
 		session,
 		github: githubService,
+		chain: chainConfig,
 	};
 }
 

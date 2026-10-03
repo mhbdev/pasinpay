@@ -12,16 +12,25 @@ import {
 import { Input } from "@pasinpay/ui/components/input";
 import { Label } from "@pasinpay/ui/components/label";
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@pasinpay/ui/components/select";
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@pasinpay/ui/components/popover";
+import { ScrollArea } from "@pasinpay/ui/components/scroll-area";
+import { Textarea } from "@pasinpay/ui/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, GitBranch, LockKeyhole, WalletCards } from "lucide-react";
+import {
+	ArrowRight,
+	ChevronDown,
+	ExternalLink,
+	GitBranch,
+	LockKeyhole,
+	Plus,
+	Search,
+	WalletCards,
+} from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { parseEventLogs, parseUnits } from "viem";
 import {
 	useAccount,
@@ -48,11 +57,19 @@ const erc20ApproveAbi = [
 	},
 ] as const;
 
+type CreationMode = "existing" | "new";
+
 export default function CreateBountyPage() {
-	const [title, setTitle] = useState("Fix checkout timeout");
+	const [creationMode, setCreationMode] = useState<CreationMode>("existing");
+	const [title, setTitle] = useState("");
+	const [issueBody, setIssueBody] = useState("");
 	const [repository, setRepository] = useState("");
-	const [issueNumber, setIssueNumber] = useState("17");
-	const [amount, setAmount] = useState("500");
+	const [issueNumber, setIssueNumber] = useState("");
+	const [issueTitle, setIssueTitle] = useState("");
+	const [issueUrl, setIssueUrl] = useState("");
+	const [issueSearch, setIssueSearch] = useState("");
+	const [issuePickerOpen, setIssuePickerOpen] = useState(false);
+	const [amount, setAmount] = useState("");
 	const [deadline, setDeadline] = useState(() =>
 		new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16),
 	);
@@ -80,40 +97,90 @@ export default function CreateBountyPage() {
 	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
+	const createIssue = useMutation(trpc.bounties.createIssue.mutationOptions());
+	const linkGitHubIssue = useMutation(
+		trpc.bounties.linkGitHubIssue.mutationOptions(),
+	);
 	const repositories = useQuery(
 		trpc.bounties.repositories.queryOptions(undefined, {
 			enabled: !sessionPending && Boolean(session),
 		}),
 	);
+	const deferredIssueSearch = useDeferredValue(issueSearch);
+	const issues = useQuery(
+		trpc.bounties.issues.queryOptions(
+			{
+				repository: repository || "invalid/repository",
+				search: deferredIssueSearch,
+			},
+			{ enabled: Boolean(repository) && creationMode === "existing" },
+		),
+	);
+	const selectedIssue = issues.data?.find(
+		(issue) => String(issue.number) === issueNumber,
+	);
+
+	function validate() {
+		if (!address)
+			return "Connect and link your wallet before funding a bounty.";
+		if (!repository) return "Select an installed GitHub repository.";
+		if (creationMode === "existing" && !selectedIssue)
+			return "Select an open GitHub issue from the searchable list.";
+		if (creationMode === "new" && title.trim().length < 4)
+			return "New issue title must be at least 4 characters.";
+		if (!amount || !/^\d+(\.\d{1,18})?$/.test(amount) || Number(amount) <= 0)
+			return "Enter a positive USDG reward amount.";
+		const deadlineDate = new Date(deadline);
+		if (
+			Number.isNaN(deadlineDate.getTime()) ||
+			deadlineDate.getTime() <= Date.now()
+		)
+			return "Choose a deadline in the future.";
+		if (decimals === undefined || tokenSymbol !== "USDG")
+			return "USDG metadata is not available yet. Try again shortly.";
+		return null;
+	}
 
 	async function submit(event: React.FormEvent) {
 		event.preventDefault();
 		setError(null);
-		if (!address)
-			return setError("Connect your wallet before funding a bounty.");
+		const validationError = validate();
+		if (validationError) return setError(validationError);
+		if (!address || !client || decimals === undefined) return;
 		const selectedRepository = repositories.data?.find(
 			(item) => item.fullName === repository,
 		);
 		if (!selectedRepository)
 			return setError(
-				"Select a repository installed through the GitHub App before funding.",
+				"Repository authorization expired. Sync it again from Settings.",
 			);
-		if (chainId !== chainConfig.id) {
+		if (chainId !== chainConfig.id)
 			await switchChainAsync({ chainId: chainConfig.id });
-		}
 		if (
 			chainConfig.escrowAddress === "0x0000000000000000000000000000000000000000"
 		)
 			return setError(
-				`${chainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
+				`${chainConfig.name} is available for wallets, but its PasinPay escrow contract has not been deployed yet.`,
 			);
-		if (!client || decimals === undefined || tokenSymbol !== "USDG")
-			return setError(
-				tokenSymbol && tokenSymbol !== "USDG"
-					? "The configured token is not USDG. Check the network configuration."
-					: "USDG metadata is not available yet. Try again shortly.",
-			);
+
 		try {
+			let finalIssueNumber = Number(issueNumber);
+			let finalIssueTitle = issueTitle || title.trim();
+			let finalIssueUrl = issueUrl;
+			if (creationMode === "new") {
+				const createdIssue = await createIssue.mutateAsync({
+					repository,
+					title: title.trim(),
+					body: issueBody.trim(),
+				});
+				finalIssueNumber = createdIssue.number;
+				finalIssueTitle = createdIssue.title;
+				finalIssueUrl = createdIssue.html_url;
+			}
+			if (!finalIssueNumber || !finalIssueUrl)
+				throw new Error(
+					"GitHub issue details are incomplete. Select or create the issue again.",
+				);
 			const rawAmount = parseUnits(amount, decimals);
 			const repositoryHash = selectedRepository.repositoryHash as `0x${string}`;
 			const deadlineSeconds = BigInt(
@@ -124,12 +191,7 @@ export default function CreateBountyPage() {
 				address: chainConfig.escrowAddress,
 				abi: escrowAbi,
 				functionName: "createBounty",
-				args: [
-					repositoryHash,
-					Number(issueNumber),
-					deadlineSeconds,
-					BigInt(60),
-				],
+				args: [repositoryHash, finalIssueNumber, deadlineSeconds, BigInt(60)],
 			});
 			const creationReceipt = await client.waitForTransactionReceipt({
 				hash: creationHash,
@@ -146,8 +208,12 @@ export default function CreateBountyPage() {
 				creatorWallet: address,
 				repository,
 				repositoryHash,
-				issueNumber: Number(issueNumber),
-				title: `[PasinPay #${Number(issueNumber)}] ${title.trim()}`,
+				issueNumber: finalIssueNumber,
+				issueTitle: finalIssueTitle,
+				issueUrl: finalIssueUrl,
+				creationMode,
+				chainId: chainConfig.id as 421614 | 42161,
+				title: `[PasinPay #${finalIssueNumber}] ${title.trim() || finalIssueTitle}`,
 				amount: rawAmount.toString(),
 				deadline: new Date(Number(deadlineSeconds) * 1000),
 				reviewWindowSeconds: 60,
@@ -172,6 +238,16 @@ export default function CreateBountyPage() {
 				onchainBountyId: created.args.bountyId.toString(),
 				status: "Funded",
 			});
+			try {
+				await linkGitHubIssue.mutateAsync({
+					repository,
+					issueNumber: finalIssueNumber,
+					title: `[PasinPay #${finalIssueNumber}] ${title.trim() || finalIssueTitle}`,
+					bountyUrl: `${window.location.origin}/bounties/${registered.id}`,
+				});
+			} catch {
+				// The bounty is already funded; a retry can be performed without risking funds.
+			}
 			window.location.href = `/bounties/${registered.id}`;
 		} catch (cause) {
 			setStep("idle");
@@ -192,49 +268,64 @@ export default function CreateBountyPage() {
 						Fund GitHub work
 					</h1>
 					<p className="mt-3 max-w-xl text-muted-foreground">
-						Lock USDG against a specific issue. The payment condition is a
-						merged pull request.
+						Choose an existing GitHub issue or create one as part of the bounty.
+						USDG is locked only after the issue is mapped to the on-chain
+						escrow.
 					</p>
 					<form className="mt-8 flex flex-col gap-6" onSubmit={submit}>
 						<Card>
 							<CardHeader>
 								<CardTitle>Task details</CardTitle>
 								<CardDescription>
-									Keep the task reference deterministic so evidence can be
-									verified.
+									GitHub evidence and the escrow record stay linked from
+									creation onward.
 								</CardDescription>
 							</CardHeader>
 							<CardContent className="grid gap-5 sm:grid-cols-2">
 								<div className="flex flex-col gap-2 sm:col-span-2">
-									<Label htmlFor="title">Task title</Label>
-									<p className="text-muted-foreground text-sm">
-										The GitHub PR title must start with [PasinPay #
-										{issueNumber || "issue"}].
-									</p>
-									<Input
-										id="title"
-										value={title}
-										onChange={(event) => setTitle(event.target.value)}
-										required
-									/>
+									<Label>Creation mode</Label>
+									<div className="flex flex-wrap gap-2">
+										<Button
+											type="button"
+											size="sm"
+											variant={
+												creationMode === "existing" ? "secondary" : "outline"
+											}
+											onClick={() => setCreationMode("existing")}
+										>
+											<Search data-icon="inline-start" /> Use an existing issue
+										</Button>
+										<Button
+											type="button"
+											size="sm"
+											variant={creationMode === "new" ? "secondary" : "outline"}
+											onClick={() => setCreationMode("new")}
+										>
+											<Plus data-icon="inline-start" /> Create a new issue
+										</Button>
+									</div>
 								</div>
-								<div className="flex flex-col gap-2">
+								<div className="flex flex-col gap-2 sm:col-span-2">
 									<Label htmlFor="repository">Repository</Label>
-									<Select
+									<select
+										id="repository"
+										className="h-9 w-full rounded-none border bg-background px-3 text-sm"
 										value={repository}
-										onValueChange={(value) => setRepository(value ?? "")}
+										onChange={(event) => {
+											setRepository(event.target.value);
+											setIssueNumber("");
+											setIssueTitle("");
+											setIssueUrl("");
+										}}
+										required
 									>
-										<SelectTrigger id="repository" className="w-full">
-											<SelectValue placeholder="Select an installed repository" />
-										</SelectTrigger>
-										<SelectContent>
-											{repositories.data?.map((item) => (
-												<SelectItem key={item.id} value={item.fullName}>
-													{item.fullName}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+										<option value="">Select an installed repository</option>
+										{repositories.data?.map((item) => (
+											<option key={item.id} value={item.fullName}>
+												{item.fullName}
+											</option>
+										))}
+									</select>
 									{!repositories.isLoading && !repositories.data?.length && (
 										<p className="text-muted-foreground text-sm">
 											No installed repositories yet. Sync them from{" "}
@@ -248,13 +339,110 @@ export default function CreateBountyPage() {
 										</p>
 									)}
 								</div>
-								<div className="flex flex-col gap-2">
-									<Label htmlFor="issue">Issue number</Label>
+								{creationMode === "existing" ? (
+									<div className="flex flex-col gap-2 sm:col-span-2">
+										<Label>GitHub issue</Label>
+										<Popover
+											open={issuePickerOpen}
+											onOpenChange={setIssuePickerOpen}
+										>
+											<PopoverTrigger
+												render={
+													<Button
+														type="button"
+														variant="outline"
+														className="w-full justify-between"
+														disabled={!repository}
+													/>
+												}
+											>
+												{selectedIssue
+													? `#${selectedIssue.number} ${selectedIssue.title}`
+													: repository
+														? "Search open issues"
+														: "Select a repository first"}
+												<ChevronDown data-icon="inline-end" />
+											</PopoverTrigger>
+											<PopoverContent
+												align="start"
+												className="w-[min(520px,calc(100vw-2rem))]"
+											>
+												<div className="flex items-center gap-2 border-b pb-2">
+													<Search className="size-4 text-muted-foreground" />
+													<Input
+														autoFocus
+														placeholder="Search issue number or title"
+														value={issueSearch}
+														onChange={(event) =>
+															setIssueSearch(event.target.value)
+														}
+													/>
+												</div>
+												<ScrollArea className="h-64">
+													<div className="flex flex-col gap-1 py-2">
+														{issues.isLoading ? (
+															<p className="px-2 py-4 text-muted-foreground">
+																Loading issues…
+															</p>
+														) : issues.data?.length ? (
+															issues.data.map((issue) => (
+																<Button
+																	key={issue.number}
+																	type="button"
+																	variant="ghost"
+																	className="h-auto justify-start whitespace-normal text-left"
+																	onClick={() => {
+																		setIssueNumber(String(issue.number));
+																		setIssueTitle(issue.title);
+																		setIssueUrl(issue.html_url);
+																		setTitle(issue.title);
+																		setIssuePickerOpen(false);
+																	}}
+																>
+																	<span className="font-mono text-muted-foreground">
+																		#{issue.number}
+																	</span>
+																	<span>{issue.title}</span>
+																</Button>
+															))
+														) : (
+															<p className="px-2 py-4 text-muted-foreground">
+																No open issues match this search.
+															</p>
+														)}
+													</div>
+												</ScrollArea>
+											</PopoverContent>
+										</Popover>
+										{selectedIssue && (
+											<a
+												className="inline-flex items-center gap-1 text-muted-foreground text-xs underline"
+												href={selectedIssue.html_url}
+												target="_blank"
+												rel="noreferrer"
+											>
+												Open issue <ExternalLink className="size-3" />
+											</a>
+										)}
+									</div>
+								) : (
+									<div className="flex flex-col gap-2 sm:col-span-2">
+										<Label htmlFor="issue-body">New issue description</Label>
+										<Textarea
+											id="issue-body"
+											placeholder="Describe the feature or fix for contributors…"
+											value={issueBody}
+											onChange={(event) => setIssueBody(event.target.value)}
+										/>
+									</div>
+								)}
+								<div className="flex flex-col gap-2 sm:col-span-2">
+									<Label htmlFor="title">Bounty title</Label>
 									<Input
-										id="issue"
-										inputMode="numeric"
-										value={issueNumber}
-										onChange={(event) => setIssueNumber(event.target.value)}
+										id="title"
+										placeholder="Fix checkout timeout"
+										value={title}
+										onChange={(event) => setTitle(event.target.value)}
 										required
 									/>
 								</div>
@@ -263,6 +451,8 @@ export default function CreateBountyPage() {
 									<Input
 										id="amount"
 										inputMode="decimal"
+										min="0.000001"
+										step="any"
 										value={amount}
 										onChange={(event) => setAmount(event.target.value)}
 										required
@@ -281,7 +471,11 @@ export default function CreateBountyPage() {
 							</CardContent>
 						</Card>
 						<div className="flex flex-wrap items-center gap-3">
-							<Button type="submit" size="lg" disabled={step !== "idle"}>
+							<Button
+								type="submit"
+								size="lg"
+								disabled={step !== "idle" || createIssue.isPending}
+							>
 								{step === "creating" ? (
 									"Creating bounty…"
 								) : step === "approving" ? (
@@ -290,7 +484,8 @@ export default function CreateBountyPage() {
 									"Funding bounty…"
 								) : (
 									<>
-										Fund ${amount} USDG <ArrowRight data-icon="inline-end" />
+										Fund ${amount || "0"} USDG{" "}
+										<ArrowRight data-icon="inline-end" />
 									</>
 								)}
 							</Button>
@@ -308,7 +503,8 @@ export default function CreateBountyPage() {
 								{title || "Untitled task"}
 							</p>
 							<p className="mt-1 text-muted-foreground text-sm">
-								{repository || "owner/repository"} · Issue #{issueNumber || "—"}
+								{repository || "owner/repository"}
+								{issueNumber && ` · Issue #${issueNumber}`}
 							</p>
 						</div>
 						<div className="font-semibold text-3xl">

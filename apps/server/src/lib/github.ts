@@ -9,6 +9,14 @@ export type GitHubInstallationRepository = {
 	html_url: string;
 };
 
+export type GitHubIssue = {
+	number: number;
+	title: string;
+	body: string | null;
+	html_url: string;
+	updated_at: string;
+};
+
 function required(name: string, value: string | undefined) {
 	if (!value) throw new Error(`${name} is not configured`);
 	return value;
@@ -63,6 +71,31 @@ export async function githubRequest<T>(
 	return response.json() as Promise<T>;
 }
 
+async function githubRequestJson<T>(
+	path: string,
+	token: string,
+	method: "POST" | "PATCH",
+	body: unknown,
+): Promise<T> {
+	const response = await fetch(`${GITHUB_API}${path}`, {
+		method,
+		headers: {
+			accept: "application/vnd.github+json",
+			"content-type": "application/json",
+			authorization: `Bearer ${token}`,
+			"x-github-api-version": "2022-11-28",
+		},
+		body: JSON.stringify(body),
+	});
+	if (!response.ok) {
+		const detail = await response.text();
+		throw new Error(
+			`GitHub request failed: ${response.status} ${detail.slice(0, 200)}`,
+		);
+	}
+	return response.json() as Promise<T>;
+}
+
 export async function listInstallationRepositories(installationId: string) {
 	const token = await createInstallationToken(installationId);
 	const repositories: GitHubInstallationRepository[] = [];
@@ -74,4 +107,55 @@ export async function listInstallationRepositories(installationId: string) {
 		if (result.repositories.length < 100) break;
 	}
 	return repositories;
+}
+
+export async function listRepositoryIssues(
+	installationId: string,
+	repository: string,
+	search = "",
+) {
+	const token = await createInstallationToken(installationId);
+	const result = await githubRequest<{
+		items: GitHubIssue[];
+	}>(
+		`/repos/${repository}/issues?state=open&per_page=100&sort=updated&direction=desc`,
+		token,
+	);
+	const normalized = search.trim().toLowerCase();
+	return result.items
+		.filter(
+			(issue) =>
+				!normalized ||
+				`${issue.number} ${issue.title}`.toLowerCase().includes(normalized),
+		)
+		.slice(0, 50);
+}
+
+export async function createIssue(
+	installationId: string,
+	repository: string,
+	input: { title: string; body: string },
+) {
+	const token = await createInstallationToken(installationId);
+	return githubRequestJson<GitHubIssue>(
+		`/repos/${repository}/issues`,
+		token,
+		"POST",
+		input,
+	);
+}
+
+export async function linkIssue(
+	installationId: string,
+	repository: string,
+	issueNumber: number,
+	input: { title: string; body: string },
+) {
+	const token = await createInstallationToken(installationId);
+	return githubRequestJson<GitHubIssue>(
+		`/repos/${repository}/issues/${issueNumber}`,
+		token,
+		"PATCH",
+		input,
+	);
 }

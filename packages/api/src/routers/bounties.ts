@@ -13,6 +13,7 @@ import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { getAddress, keccak256, toBytes, verifyMessage } from "viem";
 import { z } from "zod";
 
+import type { Context } from "../context";
 import { protectedProcedure, publicProcedure, router } from "../index";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
@@ -23,6 +24,32 @@ function serializeBounty(row: typeof bounty.$inferSelect) {
 		amount: row.amount.toString(),
 		onchainBountyId: row.onchainBountyId?.toString() ?? null,
 	};
+}
+
+async function authorizedInstallation(
+	ctx: Context & { session: NonNullable<Context["session"]> },
+	repositoryName: string,
+) {
+	const [row] = await ctx.db
+		.select({
+			installationId: githubInstallation.installationId,
+			repository: repository.fullName,
+		})
+		.from(repository)
+		.innerJoin(
+			githubInstallation,
+			eq(repository.installationId, githubInstallation.id),
+		)
+		.where(
+			and(
+				eq(githubInstallation.userId, ctx.session.user.id),
+				sql`lower(${repository.fullName}) = lower(${repositoryName})`,
+			),
+		)
+		.limit(1);
+	if (!row)
+		throw new Error("Select a repository installed through the GitHub App");
+	return row;
 }
 
 export const bountyRouter = router({
@@ -41,6 +68,71 @@ export const bountyRouter = router({
 			)
 			.where(eq(githubInstallation.userId, ctx.session.user.id));
 	}),
+
+	issues: protectedProcedure
+		.input(
+			z.object({
+				repository: z.string().min(3).max(200),
+				search: z.string().max(100).default(""),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const installation = await authorizedInstallation(ctx, input.repository);
+			return ctx.github.listRepositoryIssues(
+				installation.installationId,
+				installation.repository,
+				input.search,
+			);
+		}),
+
+	createIssue: protectedProcedure
+		.input(
+			z.object({
+				repository: z.string().min(3).max(200),
+				title: z.string().trim().min(4).max(200),
+				body: z.string().max(20_000).default(""),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const installation = await authorizedInstallation(ctx, input.repository);
+			return ctx.github.createIssue(
+				installation.installationId,
+				installation.repository,
+				{
+					title: input.title,
+					body: input.body,
+				},
+			);
+		}),
+
+	linkGitHubIssue: protectedProcedure
+		.input(
+			z.object({
+				repository: z.string().min(3).max(200),
+				issueNumber: z.number().int().positive(),
+				title: z.string().trim().min(4).max(200),
+				bountyUrl: z.string().url(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const installation = await authorizedInstallation(ctx, input.repository);
+			const issues = await ctx.github.listRepositoryIssues(
+				installation.installationId,
+				installation.repository,
+				String(input.issueNumber),
+			);
+			const issue = issues.find((item) => item.number === input.issueNumber);
+			if (!issue)
+				throw new Error("GitHub issue could not be found or is not open");
+			const link = `\n\n---\n**Funded by PasinPay:** ${input.bountyUrl}`;
+			const body = `${issue.body ?? ""}${(issue.body ?? "").includes(input.bountyUrl) ? "" : link}`;
+			return ctx.github.linkIssue(
+				installation.installationId,
+				installation.repository,
+				input.issueNumber,
+				{ title: input.title, body },
+			);
+		}),
 
 	githubApp: protectedProcedure.query(({ ctx }) => ({
 		installUrl: ctx.github.appSlug
@@ -125,8 +217,35 @@ export const bountyRouter = router({
 				.from(settlement)
 				.where(eq(settlement.bountyId, row.id))
 				.limit(1);
+			const claimRows = await ctx.db
+				.select()
+				.from(claim)
+				.where(eq(claim.bountyId, row.id))
+				.orderBy(desc(claim.createdAt));
 			return {
 				...serializeBounty(row),
+				chain: {
+					id: row.chainId,
+					name: ctx.chain.name,
+					escrowAddress: ctx.chain.escrowAddress,
+					tokenAddress: ctx.chain.usdgAddress,
+					explorerUrl: ctx.chain.explorerUrl,
+				},
+				stats: {
+					participants: new Set(
+						[
+							row.creatorWallet,
+							...claimRows.map((item) => item.claimantWallet),
+						].map((address) => address.toLowerCase()),
+					).size,
+					submissions: claimRows.length,
+					linkedPullRequests: claimRows.length,
+				},
+				claims: claimRows.map((item) => ({
+					...item,
+					attestationNonce: item.attestationNonce.toString(),
+					evidence: item.evidence as Record<string, unknown>,
+				})),
 				settlement: settlementRow
 					? { ...settlementRow, amount: settlementRow.amount.toString() }
 					: null,
@@ -160,6 +279,18 @@ export const bountyRouter = router({
 		return rows.map(serializeBounty);
 	}),
 
+	walletLink: protectedProcedure.query(async ({ ctx }) => {
+		const [row] = await ctx.db
+			.select({
+				walletAddress: walletLink.walletAddress,
+				chainId: walletLink.chainId,
+			})
+			.from(walletLink)
+			.where(eq(walletLink.userId, ctx.session.user.id))
+			.limit(1);
+		return row ?? null;
+	}),
+
 	register: protectedProcedure
 		.input(
 			z.object({
@@ -169,6 +300,10 @@ export const bountyRouter = router({
 				repository: z.string().min(3).max(200),
 				repositoryHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 				issueNumber: z.number().int().positive(),
+				issueTitle: z.string().min(1).max(300),
+				issueUrl: z.string().url(),
+				creationMode: z.enum(["existing", "new"]),
+				chainId: z.union([z.literal(421614), z.literal(42161)]),
 				title: z.string().min(1).max(200),
 				amount: z.string().regex(/^\d+$/),
 				deadline: z.coerce.date(),
@@ -180,6 +315,8 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
+			if (input.chainId !== ctx.chain.id)
+				throw new Error(`This API is configured for ${ctx.chain.name}`);
 			const [linkedWallet] = await ctx.db
 				.select()
 				.from(walletLink)
@@ -212,11 +349,15 @@ export const bountyRouter = router({
 				.values({
 					id: input.id,
 					userId: ctx.session.user.id,
+					chainId: input.chainId,
 					onchainBountyId: BigInt(input.onchainBountyId),
 					creatorWallet: getAddress(input.creatorWallet),
 					repository: input.repository,
 					repositoryHash: input.repositoryHash.toLowerCase(),
 					issueNumber: input.issueNumber,
+					issueTitle: input.issueTitle,
+					issueUrl: input.issueUrl,
+					creationMode: input.creationMode,
 					title: input.title,
 					amount: BigInt(input.amount),
 					deadline: input.deadline,
@@ -326,6 +467,13 @@ export const bountyRouter = router({
 			) {
 				throw new Error("Wallet signature could not be verified");
 			}
+			const [existingOwner] = await ctx.db
+				.select({ userId: walletLink.userId })
+				.from(walletLink)
+				.where(eq(walletLink.walletAddress, getAddress(input.address)))
+				.limit(1);
+			if (existingOwner && existingOwner.userId !== ctx.session.user.id)
+				throw new Error("This wallet is already linked to another account");
 			await ctx.db
 				.update(walletLinkChallenge)
 				.set({ usedAt: new Date() })
@@ -348,4 +496,11 @@ export const bountyRouter = router({
 				.returning();
 			return link;
 		}),
+
+	unlinkWallet: protectedProcedure.mutation(async ({ ctx }) => {
+		await ctx.db
+			.delete(walletLink)
+			.where(eq(walletLink.userId, ctx.session.user.id));
+		return { ok: true };
+	}),
 });
