@@ -22,6 +22,7 @@ local.db-*
 # Environment variables
 .env
 .env*.local
+contracts/.env.testnet.local
 
 # IDEs and editors
 .vscode/*
