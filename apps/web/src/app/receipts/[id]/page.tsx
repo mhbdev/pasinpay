@@ -16,12 +16,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
-import { webChainConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function ReceiptPage() {
 	const { id } = useParams<{ id: string }>();
+	const { chainConfig } = useAppNetwork();
 	const { data: bounty, isLoading } = useQuery(
 		trpc.bounties.getById.queryOptions({ id }),
 	);
@@ -91,11 +92,7 @@ export default function ReceiptPage() {
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">NETWORK</p>
-						<p className="mt-1 font-medium">
-							{webChainConfig.id === 42161
-								? "Arbitrum One"
-								: "Arbitrum Sepolia"}
-						</p>
+						<p className="mt-1 font-medium">{chainConfig.name}</p>
 					</div>
 				</CardContent>
 			</Card>
@@ -105,8 +102,8 @@ export default function ReceiptPage() {
 						<a
 							href={
 								transactionHash
-									? `${webChainConfig.explorerUrl}/tx/${transactionHash}`
-									: webChainConfig.explorerUrl
+									? `${chainConfig.explorerUrl}/tx/${transactionHash}`
+									: chainConfig.explorerUrl
 							}
 							target="_blank"
 							rel="noreferrer"

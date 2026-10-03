@@ -19,13 +19,14 @@ import {
 import { useState } from "react";
 import { useAccount, useConnect, useSignMessage, useSwitchChain } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
+import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
-import { activeChain } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function SettingsPage() {
 	const { data: session } = authClient.useSession();
 	const { address, chainId } = useAccount();
+	const { chainConfig } = useAppNetwork();
 	const { connectAsync, connectors } = useConnect();
 	const { signMessageAsync } = useSignMessage();
 	const { switchChainAsync } = useSwitchChain();
@@ -51,16 +52,16 @@ export default function SettingsPage() {
 				if (!connector) return setMessage("No browser wallet was detected.");
 				const connection = await connectAsync({
 					connector,
-					chainId: activeChain.id,
+					chainId: chainConfig.id,
 				});
 				linkedAddress = connection.accounts[0];
 				linkedChainId = connection.chainId;
 			}
 			if (!linkedAddress || !linkedChainId)
 				return setMessage("Connect a wallet first.");
-			if (linkedChainId !== activeChain.id) {
-				await switchChainAsync({ chainId: activeChain.id });
-				linkedChainId = activeChain.id;
+			if (linkedChainId !== chainConfig.id) {
+				await switchChainAsync({ chainId: chainConfig.id });
+				linkedChainId = chainConfig.id;
 			}
 			if (linkedChainId !== 421614 && linkedChainId !== 42161)
 				return setMessage(

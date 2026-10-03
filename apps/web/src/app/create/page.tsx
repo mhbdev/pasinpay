@@ -31,7 +31,7 @@ import {
 	useWriteContract,
 } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
-import { activeChain, webChainConfig } from "@/lib/wallet";
+import { useAppNetwork } from "@/components/network-provider";
 import { trpc } from "@/utils/trpc";
 
 const erc20ApproveAbi = [
@@ -60,20 +60,21 @@ export default function CreateBountyPage() {
 		"idle" | "creating" | "approving" | "funding"
 	>("idle");
 	const { address, chainId } = useAccount();
+	const { chainConfig } = useAppNetwork();
 	const { switchChainAsync } = useSwitchChain();
-	const client = usePublicClient();
+	const client = usePublicClient({ chainId: chainConfig.id });
 	const { writeContractAsync } = useWriteContract();
 	const { data: decimals } = useReadContract({
-		address: webChainConfig.usdgAddress,
+		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
 		functionName: "decimals",
-		chainId: activeChain.id,
+		chainId: chainConfig.id,
 	});
 	const { data: tokenSymbol } = useReadContract({
-		address: webChainConfig.usdgAddress,
+		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
 		functionName: "symbol",
-		chainId: activeChain.id,
+		chainId: chainConfig.id,
 	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
@@ -91,9 +92,15 @@ export default function CreateBountyPage() {
 			return setError(
 				"Select a repository installed through the GitHub App before funding.",
 			);
-		if (chainId !== activeChain.id) {
-			await switchChainAsync({ chainId: activeChain.id });
+		if (chainId !== chainConfig.id) {
+			await switchChainAsync({ chainId: chainConfig.id });
 		}
+		if (
+			chainConfig.escrowAddress === "0x0000000000000000000000000000000000000000"
+		)
+			return setError(
+				`${chainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
+			);
 		if (!client || decimals === undefined || tokenSymbol !== "USDG")
 			return setError(
 				tokenSymbol && tokenSymbol !== "USDG"
@@ -108,7 +115,7 @@ export default function CreateBountyPage() {
 			);
 			setStep("creating");
 			const creationHash = await writeContractAsync({
-				address: webChainConfig.escrowAddress,
+				address: chainConfig.escrowAddress,
 				abi: escrowAbi,
 				functionName: "createBounty",
 				args: [
@@ -141,15 +148,15 @@ export default function CreateBountyPage() {
 			});
 			setStep("approving");
 			const approvalHash = await writeContractAsync({
-				address: webChainConfig.usdgAddress,
+				address: chainConfig.usdgAddress,
 				abi: erc20ApproveAbi,
 				functionName: "approve",
-				args: [webChainConfig.escrowAddress, rawAmount],
+				args: [chainConfig.escrowAddress, rawAmount],
 			});
 			await client.waitForTransactionReceipt({ hash: approvalHash });
 			setStep("funding");
 			const fundingHash = await writeContractAsync({
-				address: webChainConfig.escrowAddress,
+				address: chainConfig.escrowAddress,
 				abi: escrowAbi,
 				functionName: "fundBounty",
 				args: [created.args.bountyId, rawAmount],
@@ -312,7 +319,7 @@ export default function CreateBountyPage() {
 								<LockKeyhole className="size-4" /> Non-custodial escrow
 							</span>
 							<span className="flex items-center gap-2">
-								<WalletCards className="size-4" /> {activeChain.name}
+								<WalletCards className="size-4" /> {chainConfig.name}
 							</span>
 						</div>
 						<Link

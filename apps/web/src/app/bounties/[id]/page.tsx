@@ -26,8 +26,8 @@ import {
 	useSwitchChain,
 	useWriteContract,
 } from "wagmi";
+import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
-import { webChainConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 const statusLabels: Record<string, string> = {
@@ -50,7 +50,8 @@ export default function BountyDetailPage() {
 		trpc.bounties.claim.queryOptions({ bountyId: id }),
 	);
 	const { address, chainId } = useAccount();
-	const client = usePublicClient({ chainId: webChainConfig.id });
+	const { chainConfig } = useAppNetwork();
+	const client = usePublicClient({ chainId: chainConfig.id });
 	const { switchChainAsync } = useSwitchChain();
 	const { writeContractAsync } = useWriteContract();
 	const queryClient = useQueryClient();
@@ -65,8 +66,15 @@ export default function BountyDetailPage() {
 		setBusy(functionName);
 		setError(null);
 		try {
-			if (chainId !== webChainConfig.id)
-				await switchChainAsync({ chainId: webChainConfig.id });
+			if (chainId !== chainConfig.id)
+				await switchChainAsync({ chainId: chainConfig.id });
+			if (
+				chainConfig.escrowAddress ===
+				"0x0000000000000000000000000000000000000000"
+			)
+				throw new Error(
+					`${chainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
+				);
 			if (functionName === "submitClaim") {
 				if (!claim)
 					throw new Error("The verified attestation is not ready yet.");
@@ -81,7 +89,7 @@ export default function BountyDetailPage() {
 				const commitHash =
 					`0x${(evidence.commitHash ?? claim.mergeCommitSha).padStart(64, "0")}` as `0x${string}`;
 				const hash = await writeContractAsync({
-					address: webChainConfig.escrowAddress,
+					address: chainConfig.escrowAddress,
 					abi: escrowAbi,
 					functionName,
 					args: [
@@ -103,7 +111,7 @@ export default function BountyDetailPage() {
 						"Only the bounty creator can approve or finalize this claim.",
 					);
 				const hash = await writeContractAsync({
-					address: webChainConfig.escrowAddress,
+					address: chainConfig.escrowAddress,
 					abi: escrowAbi,
 					functionName,
 					args: [BigInt(bounty.onchainBountyId)],
@@ -240,11 +248,7 @@ export default function BountyDetailPage() {
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">NETWORK</p>
-							<p className="mt-1 font-medium">
-								{webChainConfig.id === 42161
-									? "Arbitrum One"
-									: "Arbitrum Sepolia"}
-							</p>
+							<p className="mt-1 font-medium">{chainConfig.name}</p>
 						</div>
 					</CardContent>
 				</Card>

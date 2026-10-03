@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { ModeToggle } from "./mode-toggle";
+import { NetworkSelector } from "./network-selector";
 import UserMenu from "./user-menu";
 import { WalletButton } from "./wallet-button";
 
@@ -46,6 +47,7 @@ export default function Header() {
 					</nav>
 				</div>
 				<div className="flex items-center gap-2">
+					<NetworkSelector />
 					{!isPending && session && <WalletButton />}
 					<ModeToggle />
 					<UserMenu />

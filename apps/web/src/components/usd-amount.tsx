@@ -3,7 +3,7 @@
 import { erc20MetadataAbi } from "@pasinpay/chain";
 import { formatUnits } from "viem";
 import { useReadContract } from "wagmi";
-import { webChainConfig } from "@/lib/wallet";
+import { useAppNetwork } from "./network-provider";
 
 export function UsdAmount({
 	amount,
@@ -12,17 +12,18 @@ export function UsdAmount({
 	amount: string;
 	className?: string;
 }) {
+	const { chainConfig } = useAppNetwork();
 	const { data: decimals } = useReadContract({
-		address: webChainConfig.usdgAddress,
+		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
 		functionName: "decimals",
-		chainId: webChainConfig.id,
+		chainId: chainConfig.id,
 	});
 	const { data: symbol } = useReadContract({
-		address: webChainConfig.usdgAddress,
+		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
 		functionName: "symbol",
-		chainId: webChainConfig.id,
+		chainId: chainConfig.id,
 	});
 	let value: string | null = null;
 	try {

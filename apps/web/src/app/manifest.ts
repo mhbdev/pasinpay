@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
 		start_url: "/",
 		display: "standalone",
 		background_color: "#f8fafc",
-		theme_color: "#111318",
+		theme_color: "#ffffff",
 		icons: [
 			{
 				src: "/brand/pasinpay-mark.png",
