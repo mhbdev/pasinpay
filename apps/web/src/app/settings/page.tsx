@@ -3,8 +3,8 @@
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
-	CardContent,
 	CardDescription,
+	CardFooter,
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
@@ -143,7 +143,7 @@ export default function SettingsPage() {
 						payment.
 					</p>
 				</div>
-				<div className="grid gap-5">
+				<div className="grid gap-6">
 					<Card>
 						<CardHeader>
 							<CardTitle className="flex items-center gap-2 text-base">
@@ -154,7 +154,7 @@ export default function SettingsPage() {
 								installed repositories.
 							</CardDescription>
 						</CardHeader>
-						<CardContent className="flex items-center justify-between gap-4 border-t">
+						<CardFooter className="justify-between gap-4">
 							<div>
 								<p className="font-medium">
 									{githubStatus.data?.connected
@@ -184,8 +184,8 @@ export default function SettingsPage() {
 									Connect GitHub
 								</Button>
 							)}
-						</CardContent>
-						<CardContent className="border-t">
+						</CardFooter>
+						<CardFooter className="flex-col items-stretch gap-3">
 							<div className="flex flex-wrap items-center gap-3">
 								{githubApp.data?.installUrl && (
 									<Button
@@ -216,7 +216,7 @@ export default function SettingsPage() {
 								</Button>
 							</div>
 							{repositories.data && (
-								<p className="mt-3 text-muted-foreground text-sm">
+								<p className="text-muted-foreground text-sm">
 									{repositories.data.length} installed{" "}
 									{repositories.data.length === 1
 										? "repository"
@@ -224,7 +224,7 @@ export default function SettingsPage() {
 									available for bounties.
 								</p>
 							)}
-						</CardContent>
+						</CardFooter>
 					</Card>
 					<Card>
 						<CardHeader>
@@ -236,7 +236,7 @@ export default function SettingsPage() {
 								payout address.
 							</CardDescription>
 						</CardHeader>
-						<CardContent className="flex items-center justify-between gap-4 border-t">
+						<CardFooter className="justify-between gap-4">
 							<div>
 								<p className="font-mono text-sm">
 									{wallet.data?.walletAddress
@@ -274,7 +274,7 @@ export default function SettingsPage() {
 											? "Link wallet"
 											: "Connect & link wallet"}
 							</Button>
-						</CardContent>
+						</CardFooter>
 					</Card>
 				</div>
 				{message && <p className="text-muted-foreground text-sm">{message}</p>}
