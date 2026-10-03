@@ -8,6 +8,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@pasinpay/ui/components/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ExternalLink,
@@ -68,6 +77,7 @@ export default function SettingsPage() {
 		onError: (error) => setMessage(error.message),
 	});
 	const [message, setMessage] = useState<string | null>(null);
+	const [unlinkOpen, setUnlinkOpen] = useState(false);
 	const walletIsLinked = Boolean(wallet.data);
 
 	async function connectWallet() {
@@ -122,6 +132,7 @@ export default function SettingsPage() {
 			await queryClient.invalidateQueries({
 				queryKey: trpc.bounties.walletLink.queryKey(),
 			});
+			setUnlinkOpen(false);
 			setMessage("Wallet unlinked successfully.");
 		} catch (error) {
 			setMessage(
@@ -254,7 +265,9 @@ export default function SettingsPage() {
 								</p>
 							</div>
 							<Button
-								onClick={walletIsLinked ? unlinkLinkedWallet : connectWallet}
+								onClick={() =>
+									walletIsLinked ? setUnlinkOpen(true) : connectWallet()
+								}
 								disabled={
 									!session?.user ||
 									challenge.isPending ||
@@ -275,9 +288,37 @@ export default function SettingsPage() {
 											: "Connect & link wallet"}
 							</Button>
 						</CardFooter>
+						<Dialog open={unlinkOpen} onOpenChange={setUnlinkOpen}>
+							<DialogContent>
+								<DialogHeader>
+									<DialogTitle>Unlink wallet?</DialogTitle>
+									<DialogDescription>
+										This removes the payout address from your PasinPay account.
+										It does not disconnect your browser wallet or move any
+										escrowed funds.
+									</DialogDescription>
+								</DialogHeader>
+								<DialogFooter>
+									<DialogClose render={<Button variant="outline" />}>
+										Keep wallet linked
+									</DialogClose>
+									<Button
+										variant="destructive"
+										onClick={unlinkLinkedWallet}
+										disabled={unlinkWallet.isPending}
+									>
+										{unlinkWallet.isPending ? "Unlinking…" : "Unlink wallet"}
+									</Button>
+								</DialogFooter>
+							</DialogContent>
+						</Dialog>
 					</Card>
 				</div>
-				{message && <p className="text-muted-foreground text-sm">{message}</p>}
+				{message && (
+					<p aria-live="polite" className="text-muted-foreground text-sm">
+						{message}
+					</p>
+				)}
 			</main>
 		</AuthGuard>
 	);
