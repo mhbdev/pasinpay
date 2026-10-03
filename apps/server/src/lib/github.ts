@@ -143,14 +143,12 @@ export async function listRepositoryIssues(
 	search = "",
 ) {
 	const token = await createInstallationToken(installationId);
-	const result = await githubRequest<{
-		items: GitHubIssue[];
-	}>(
+	const result = await githubRequest<GitHubIssue[]>(
 		`/repos/${repository}/issues?state=open&per_page=100&sort=updated&direction=desc`,
 		token,
 	);
 	const normalized = search.trim().toLowerCase();
-	return result.items
+	return result
 		.filter(
 			(issue) =>
 				!normalized ||
