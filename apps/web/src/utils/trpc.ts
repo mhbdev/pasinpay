@@ -4,51 +4,61 @@ import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { toast } from "sonner";
 
-function getServerUrl(url: string) {
-  const processEnv = (
-    globalThis as {
-      process?: { env?: Record<string, string | undefined> };
-    }
-  ).process?.env;
-  if (typeof window === "undefined" && processEnv?.SERVER_URL) {
-    return processEnv.SERVER_URL.endsWith("/")
-      ? processEnv.SERVER_URL.slice(0, -1)
-      : processEnv.SERVER_URL;
-  }
+function isUnauthorizedError(error: unknown) {
+	if (!error || typeof error !== "object") return false;
+	const data = (error as { data?: { code?: string } }).data;
+	return data?.code === "UNAUTHORIZED";
+}
 
-  return url.endsWith("/") ? url.slice(0, -1) : url;
+function getServerUrl(url: string) {
+	const processEnv = (
+		globalThis as {
+			process?: { env?: Record<string, string | undefined> };
+		}
+	).process?.env;
+	if (typeof window === "undefined" && processEnv?.SERVER_URL) {
+		return processEnv.SERVER_URL.endsWith("/")
+			? processEnv.SERVER_URL.slice(0, -1)
+			: processEnv.SERVER_URL;
+	}
+
+	return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
 export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error, query) => {
-      toast.error(error.message, {
-        action: {
-          label: "retry",
-          onClick: () => {
-            query.invalidate();
-          },
-        },
-      });
-    },
-  }),
+	queryCache: new QueryCache({
+		onError: (error, query) => {
+			// Protected queries can mount while Better Auth is still hydrating the
+			// OAuth session. AuthGuard handles the redirect; do not toast once per
+			// protected query during that short transition.
+			if (isUnauthorizedError(error)) return;
+			toast.error(error.message, {
+				action: {
+					label: "retry",
+					onClick: () => {
+						query.invalidate();
+					},
+				},
+			});
+		},
+	}),
 });
 
 const trpcClient = createTRPCClient<AppRouter>({
-  links: [
-    httpBatchLink({
-      url: `${getServerUrl(process.env.NEXT_PUBLIC_SERVER_URL!)}/trpc`,
-      fetch(url, options) {
-        return fetch(url, {
-          ...options,
-          credentials: "include",
-        });
-      },
-    }),
-  ],
+	links: [
+		httpBatchLink({
+			url: `${getServerUrl(process.env.NEXT_PUBLIC_SERVER_URL ?? "")}/trpc`,
+			fetch(url, options) {
+				return fetch(url, {
+					...options,
+					credentials: "include",
+				});
+			},
+		}),
+	],
 });
 
 export const trpc = createTRPCOptionsProxy<AppRouter>({
-  client: trpcClient,
-  queryClient,
+	client: trpcClient,
+	queryClient,
 });

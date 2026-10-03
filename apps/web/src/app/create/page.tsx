@@ -32,6 +32,7 @@ import {
 } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
+import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 const erc20ApproveAbi = [
@@ -59,6 +60,7 @@ export default function CreateBountyPage() {
 	const [step, setStep] = useState<
 		"idle" | "creating" | "approving" | "funding"
 	>("idle");
+	const { data: session, isPending: sessionPending } = authClient.useSession();
 	const { address, chainId } = useAccount();
 	const { chainConfig } = useAppNetwork();
 	const { switchChainAsync } = useSwitchChain();
@@ -78,7 +80,11 @@ export default function CreateBountyPage() {
 	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
-	const repositories = useQuery(trpc.bounties.repositories.queryOptions());
+	const repositories = useQuery(
+		trpc.bounties.repositories.queryOptions(undefined, {
+			enabled: !sessionPending && Boolean(session),
+		}),
+	);
 
 	async function submit(event: React.FormEvent) {
 		event.preventDefault();

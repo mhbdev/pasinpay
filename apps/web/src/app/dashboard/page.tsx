@@ -12,10 +12,16 @@ import { ArrowUpRight, BriefcaseBusiness, Plus } from "lucide-react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { UsdAmount } from "@/components/usd-amount";
+import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 export default function DashboardPage() {
-	const { data, isLoading } = useQuery(trpc.bounties.mine.queryOptions());
+	const { data: session, isPending: sessionPending } = authClient.useSession();
+	const { data, isLoading } = useQuery(
+		trpc.bounties.mine.queryOptions(undefined, {
+			enabled: !sessionPending && Boolean(session),
+		}),
+	);
 	return (
 		<AuthGuard>
 			<main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 py-12">
@@ -35,13 +41,13 @@ export default function DashboardPage() {
 				</div>
 				<div className="grid gap-4 sm:grid-cols-3">
 					<Card>
-						<CardContent className="flex flex-col gap-2 pt-6">
+						<CardContent className="flex flex-col gap-2">
 							<p className="text-muted-foreground text-sm">Created</p>
 							<p className="font-semibold text-3xl">{data?.length ?? 0}</p>
 						</CardContent>
 					</Card>
 					<Card>
-						<CardContent className="flex flex-col gap-2 pt-6">
+						<CardContent className="flex flex-col gap-2">
 							<p className="text-muted-foreground text-sm">Payment ready</p>
 							<p className="font-semibold text-3xl">
 								{data?.filter((item) => item.status === "ClaimPending")
@@ -50,7 +56,7 @@ export default function DashboardPage() {
 						</CardContent>
 					</Card>
 					<Card>
-						<CardContent className="flex flex-col gap-2 pt-6">
+						<CardContent className="flex flex-col gap-2">
 							<p className="text-muted-foreground text-sm">Settled</p>
 							<p className="font-semibold text-3xl">
 								{data?.filter((item) => item.status === "Paid").length ?? 0}
@@ -64,7 +70,7 @@ export default function DashboardPage() {
 							<BriefcaseBusiness className="size-4" /> Bounties
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="p-0">
+					<CardContent>
 						{isLoading ? (
 							<p className="p-6 text-muted-foreground text-sm">
 								Loading dashboard…
@@ -80,7 +86,7 @@ export default function DashboardPage() {
 							<div className="divide-y">
 								{data.map((item) => (
 									<Link
-										className="flex items-center justify-between gap-4 p-5 hover:bg-muted/40"
+										className="flex items-center justify-between gap-4 py-4 hover:bg-muted/40"
 										href={`/bounties/${item.id}`}
 										key={item.id}
 									>

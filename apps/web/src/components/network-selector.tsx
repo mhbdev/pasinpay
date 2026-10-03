@@ -14,10 +14,7 @@ export function NetworkSelector() {
 		useAppNetwork();
 
 	return (
-		<div className="flex items-center gap-2">
-			<span className="hidden text-muted-foreground text-xs sm:inline">
-				Network
-			</span>
+		<div className="flex items-center">
 			<Select
 				value={ready ? String(chainId) : String(421614)}
 				onValueChange={(value) => {
@@ -27,7 +24,7 @@ export function NetworkSelector() {
 			>
 				<SelectTrigger
 					aria-label="Select Arbitrum network"
-					className="h-9 w-[148px] text-xs"
+					className="h-8 w-[140px] text-xs"
 					title={error ?? undefined}
 				>
 					<SelectValue>

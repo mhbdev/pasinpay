@@ -16,8 +16,8 @@ export default function Header() {
 
 	return (
 		<header className="border-b bg-background/95">
-			<div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-				<div className="flex items-center gap-8">
+			<div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5">
+				<div className="flex items-center gap-6">
 					<Link
 						href="/"
 						className="flex items-center gap-2 font-semibold tracking-tight"
@@ -32,7 +32,7 @@ export default function Header() {
 						/>
 						PasinPay
 					</Link>
-					<nav className="hidden gap-5 text-muted-foreground text-sm sm:flex">
+					<nav className="hidden gap-4 text-muted-foreground text-sm sm:flex">
 						{links.map(({ to, label }) => {
 							return (
 								<Link
@@ -46,7 +46,7 @@ export default function Header() {
 						})}
 					</nav>
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1.5">
 					<NetworkSelector />
 					{!isPending && session && <WalletButton />}
 					<ModeToggle />

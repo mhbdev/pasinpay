@@ -60,7 +60,7 @@ export default function Home() {
 						</span>
 					</div>
 				</div>
-				<Card className="relative overflow-hidden border-foreground/10 bg-card shadow-foreground/5 shadow-xl">
+				<Card className="relative">
 					<div className="absolute inset-x-0 top-0 h-1 bg-foreground" />
 					<CardHeader className="gap-5 border-b">
 						<div className="flex items-center justify-between text-muted-foreground text-xs">
@@ -84,7 +84,7 @@ export default function Home() {
 							</span>
 						</div>
 					</CardHeader>
-					<CardContent className="flex flex-col gap-4 pt-6">
+					<CardContent className="flex flex-col gap-4">
 						{[
 							"Bounty created",
 							"USDG funded",
@@ -143,7 +143,7 @@ export default function Home() {
 				</div>
 				<div className="grid gap-4 md:grid-cols-3">
 					<Card>
-						<CardContent className="flex flex-col gap-3 pt-6">
+						<CardContent className="flex flex-col gap-3">
 							<GitPullRequest className="size-5" />
 							<h3 className="font-medium">Evidence, not promises</h3>
 							<p className="text-muted-foreground text-sm leading-6">
@@ -153,7 +153,7 @@ export default function Home() {
 						</CardContent>
 					</Card>
 					<Card>
-						<CardContent className="flex flex-col gap-3 pt-6">
+						<CardContent className="flex flex-col gap-3">
 							<WalletCards className="size-5" />
 							<h3 className="font-medium">Non-custodial escrow</h3>
 							<p className="text-muted-foreground text-sm leading-6">
@@ -163,7 +163,7 @@ export default function Home() {
 						</CardContent>
 					</Card>
 					<Card>
-						<CardContent className="flex flex-col gap-3 pt-6">
+						<CardContent className="flex flex-col gap-3">
 							<ShieldCheck className="size-5" />
 							<h3 className="font-medium">A public receipt</h3>
 							<p className="text-muted-foreground text-sm leading-6">

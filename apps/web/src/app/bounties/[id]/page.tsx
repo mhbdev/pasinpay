@@ -193,7 +193,7 @@ export default function BountyDetailPage() {
 					<CardHeader className="border-b">
 						<CardTitle className="text-base">Progress</CardTitle>
 					</CardHeader>
-					<CardContent className="flex flex-col gap-5 pt-6">
+					<CardContent className="flex flex-col gap-5">
 						{steps.map((step, index) => (
 							<div className="flex items-center gap-3 text-sm" key={step}>
 								<span
@@ -227,7 +227,7 @@ export default function BountyDetailPage() {
 							<ShieldCheck className="size-4" /> Verified proof
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="grid gap-5 pt-6 text-sm sm:grid-cols-2">
+					<CardContent className="grid gap-5 text-sm sm:grid-cols-2">
 						<div>
 							<p className="text-muted-foreground text-xs">PULL REQUEST</p>
 							<p className="mt-1 font-medium">
@@ -254,7 +254,7 @@ export default function BountyDetailPage() {
 				</Card>
 			</div>
 			<aside className="flex flex-col gap-5 lg:sticky lg:top-8 lg:h-fit">
-				<Card className="overflow-hidden">
+				<Card>
 					<CardHeader className="gap-4 border-b">
 						<p className="text-muted-foreground text-xs">BOUNTY REWARD</p>
 						<div className="font-semibold text-4xl tracking-tight">
@@ -264,7 +264,7 @@ export default function BountyDetailPage() {
 							Deadline {new Date(bounty.deadline).toLocaleDateString()}
 						</p>
 					</CardHeader>
-					<CardContent className="flex flex-col gap-3 pt-6">
+					<CardContent className="flex flex-col gap-3">
 						{(bounty.status === "Funded" || bounty.status === "ClaimPending") &&
 							claim && (
 								<Button
@@ -308,7 +308,7 @@ export default function BountyDetailPage() {
 					</CardContent>
 				</Card>
 				<Card>
-					<CardContent className="flex flex-col gap-3 pt-6 text-sm">
+					<CardContent className="flex flex-col gap-3 text-sm">
 						<p className="flex items-center gap-2 font-medium">
 							<GitPullRequest className="size-4" /> How to claim
 						</p>

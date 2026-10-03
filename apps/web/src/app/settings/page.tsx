@@ -24,7 +24,8 @@ import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 export default function SettingsPage() {
-	const { data: session } = authClient.useSession();
+	const { data: session, isPending: sessionPending } = authClient.useSession();
+	const isAuthenticated = !sessionPending && Boolean(session);
 	const { address, chainId } = useAccount();
 	const { chainConfig } = useAppNetwork();
 	const { connectAsync, connectors } = useConnect();
@@ -34,9 +35,21 @@ export default function SettingsPage() {
 		trpc.bounties.walletChallenge.mutationOptions(),
 	);
 	const linkWallet = useMutation(trpc.bounties.linkWallet.mutationOptions());
-	const githubApp = useQuery(trpc.bounties.githubApp.queryOptions());
-	const githubStatus = useQuery(trpc.bounties.githubStatus.queryOptions());
-	const repositories = useQuery(trpc.bounties.repositories.queryOptions());
+	const githubApp = useQuery(
+		trpc.bounties.githubApp.queryOptions(undefined, {
+			enabled: isAuthenticated,
+		}),
+	);
+	const githubStatus = useQuery(
+		trpc.bounties.githubStatus.queryOptions(undefined, {
+			enabled: isAuthenticated,
+		}),
+	);
+	const repositories = useQuery(
+		trpc.bounties.repositories.queryOptions(undefined, {
+			enabled: isAuthenticated,
+		}),
+	);
 	const refreshRepositories = useMutation({
 		...trpc.bounties.refreshRepositories.mutationOptions(),
 		onSuccess: () => repositories.refetch(),
@@ -110,7 +123,7 @@ export default function SettingsPage() {
 								installed repositories.
 							</CardDescription>
 						</CardHeader>
-						<CardContent className="flex items-center justify-between gap-4 border-t pt-5">
+						<CardContent className="flex items-center justify-between gap-4 border-t">
 							<div>
 								<p className="font-medium">
 									{githubStatus.data?.connected
@@ -141,7 +154,7 @@ export default function SettingsPage() {
 								</Button>
 							)}
 						</CardContent>
-						<CardContent className="border-t pt-5">
+						<CardContent className="border-t">
 							<div className="flex flex-wrap items-center gap-3">
 								{githubApp.data?.installUrl && (
 									<Button
@@ -189,7 +202,7 @@ export default function SettingsPage() {
 								payout address.
 							</CardDescription>
 						</CardHeader>
-						<CardContent className="flex items-center justify-between gap-4 border-t pt-5">
+						<CardContent className="flex items-center justify-between gap-4 border-t">
 							<div>
 								<p className="font-mono text-sm">
 									{address

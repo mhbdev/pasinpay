@@ -35,7 +35,7 @@ export default function BountiesPage() {
 						<Search className="size-4" /> Available work
 					</CardTitle>
 				</CardHeader>
-				<CardContent className="p-0">
+				<CardContent>
 					{isLoading ? (
 						<div className="p-6 text-muted-foreground text-sm">
 							Loading bounties…
@@ -52,7 +52,7 @@ export default function BountiesPage() {
 						<div className="divide-y">
 							{data.map((item) => (
 								<Link
-									className="flex items-center justify-between gap-5 p-5 transition-colors hover:bg-muted/40"
+									className="flex items-center justify-between gap-5 py-4 transition-colors hover:bg-muted/40"
 									href={`/bounties/${item.id}`}
 									key={item.id}
 								>

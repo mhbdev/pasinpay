@@ -68,7 +68,7 @@ export default function ReceiptPage() {
 							: "verified claimant"}
 					</p>
 				</CardHeader>
-				<CardContent className="grid gap-6 pt-6 sm:grid-cols-2">
+				<CardContent className="grid gap-6 sm:grid-cols-2">
 					<div>
 						<p className="text-muted-foreground text-xs">GITHUB</p>
 						<p className="mt-1 flex items-center gap-2 font-medium">
