@@ -20,7 +20,7 @@ export default function UserMenu() {
 	const { data: session, isPending } = authClient.useSession();
 
 	if (isPending) {
-		return <Skeleton className="h-9 w-24" />;
+		return <Skeleton className="h-7 w-24" />;
 	}
 
 	if (!session) {

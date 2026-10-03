@@ -24,7 +24,8 @@ export function NetworkSelector() {
 			>
 				<SelectTrigger
 					aria-label="Select Arbitrum network"
-					className="h-8 w-[140px] text-xs"
+					size="sm"
+					className="w-[140px] text-xs"
 					title={error ?? undefined}
 				>
 					<SelectValue>
