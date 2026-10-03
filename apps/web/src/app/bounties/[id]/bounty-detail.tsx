@@ -1,6 +1,11 @@
 "use client";
 
 import { escrowAbi } from "@pasinpay/chain";
+import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@pasinpay/ui/components/avatar";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -322,6 +327,51 @@ export default function BountyDetailPage() {
 						</Button>
 					</div>
 				</div>
+				<Card>
+					<CardContent className="flex flex-wrap items-center gap-4">
+						<Avatar size="lg">
+							{bounty.creator.image && (
+								<AvatarImage
+									alt={bounty.creator.name}
+									src={bounty.creator.image}
+								/>
+							)}
+							<AvatarFallback>
+								{bounty.creator.name.slice(0, 2).toUpperCase()}
+							</AvatarFallback>
+						</Avatar>
+						<div className="min-w-0">
+							<p className="text-muted-foreground text-xs uppercase tracking-wide">
+								Created by
+							</p>
+							<p className="font-medium">{bounty.creator.name}</p>
+							{bounty.creator.githubUrl && bounty.creator.githubLogin && (
+								<a
+									className="text-muted-foreground text-sm hover:underline"
+									href={bounty.creator.githubUrl}
+									target="_blank"
+									rel="noreferrer"
+								>
+									@{bounty.creator.githubLogin}
+								</a>
+							)}
+						</div>
+						<div className="ml-auto min-w-56 text-left sm:text-right">
+							<p className="text-muted-foreground text-xs uppercase tracking-wide">
+								Creator wallet
+							</p>
+							<a
+								className="font-mono text-xs hover:underline"
+								href={chain?.explorerUrl + "/address/" + bounty.creator.wallet}
+								target="_blank"
+								rel="noreferrer"
+							>
+								{bounty.creator.wallet.slice(0, 10)}…
+								{bounty.creator.wallet.slice(-8)}
+							</a>
+						</div>
+					</CardContent>
+				</Card>
 				<Card>
 					<CardHeader className="border-b">
 						<CardTitle className="text-base">Bounty overview</CardTitle>

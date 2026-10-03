@@ -6,6 +6,7 @@ import {
 	githubInstallation,
 	repository,
 	settlement,
+	user,
 	walletLink,
 	walletLinkChallenge,
 } from "@pasinpay/db/schema/index";
@@ -338,6 +339,14 @@ export const bountyRouter = router({
 				.where(eq(bounty.id, input.id))
 				.limit(1);
 			if (!row) return null;
+			const [creatorRow] = await ctx.db
+				.select({
+					name: user.name,
+					image: user.image,
+				})
+				.from(user)
+				.where(eq(user.id, row.userId))
+				.limit(1);
 			const [settlementRow] = await ctx.db
 				.select()
 				.from(settlement)
@@ -349,7 +358,10 @@ export const bountyRouter = router({
 				.where(eq(claim.bountyId, row.id))
 				.orderBy(desc(claim.createdAt));
 			const [repositoryInstallation] = await ctx.db
-				.select({ installationId: githubInstallation.installationId })
+				.select({
+					installationId: githubInstallation.installationId,
+					accountLogin: githubInstallation.accountLogin,
+				})
 				.from(repository)
 				.innerJoin(
 					githubInstallation,
@@ -427,6 +439,15 @@ export const bountyRouter = router({
 			).size;
 			return {
 				...serializeBounty(row),
+				creator: {
+					name: creatorRow?.name ?? "PasinPay creator",
+					image: creatorRow?.image ?? null,
+					githubLogin: repositoryInstallation?.accountLogin ?? null,
+					githubUrl: repositoryInstallation?.accountLogin
+						? "https://github.com/" + repositoryInstallation.accountLogin
+						: null,
+					wallet: row.creatorWallet,
+				},
 				chain: {
 					id: row.chainId,
 					name: ctx.chain.name,
