@@ -29,7 +29,11 @@ export default function SignInForm({
 	async function continueWithGithub() {
 		setIsSigningIn(true);
 		await authClient.signIn.social(
-			{ provider: "github", callbackURL: "/dashboard" },
+			{
+				provider: "github",
+				callbackURL: `${window.location.origin}/dashboard`,
+				errorCallbackURL: `${window.location.origin}/login?authError=github`,
+			},
 			{
 				onSuccess: () => {
 					toast.success("Welcome back");

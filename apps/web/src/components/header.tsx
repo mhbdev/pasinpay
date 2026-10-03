@@ -1,11 +1,13 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
+import { authClient } from "@/lib/auth-client";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 import { WalletButton } from "./wallet-button";
 
 export default function Header() {
+	const { data: session, isPending } = authClient.useSession();
 	const links = [
 		{ to: "/bounties", label: "Bounties" },
 		{ to: "/dashboard", label: "Dashboard" },
@@ -44,7 +46,7 @@ export default function Header() {
 					</nav>
 				</div>
 				<div className="flex items-center gap-2">
-					<WalletButton />
+					{!isPending && session && <WalletButton />}
 					<ModeToggle />
 					<UserMenu />
 				</div>

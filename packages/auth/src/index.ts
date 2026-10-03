@@ -29,6 +29,18 @@ export function createAuth(
 						github: {
 							clientId: env.GITHUB_CLIENT_ID,
 							clientSecret: env.GITHUB_CLIENT_SECRET,
+							scope: ["read:user", "user:email"],
+							mapProfileToUser: (profile) => ({
+								// GitHub may keep the primary address private even when the
+								// account is verified. Use GitHub's stable id as a local,
+								// non-routable identity fallback in that case.
+								email:
+									profile.email ??
+									`github-${profile.id}@users.noreply.pasinpay.app`,
+								name: profile.name ?? profile.login,
+								image: profile.avatar_url,
+								emailVerified: true,
+							}),
 						},
 					}
 				: undefined,

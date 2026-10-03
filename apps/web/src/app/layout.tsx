@@ -42,7 +42,7 @@ export default function RootLayout({
 				<PwaRegistration />
 
 				<Providers>
-					<div className="grid h-svh grid-rows-[auto_1fr]">
+					<div className="min-h-svh">
 						<Header />
 						{children}
 					</div>

@@ -29,7 +29,11 @@ export default function SignUpForm({
 	async function continueWithGithub() {
 		setIsSigningUp(true);
 		await authClient.signIn.social(
-			{ provider: "github", callbackURL: "/dashboard" },
+			{
+				provider: "github",
+				callbackURL: `${window.location.origin}/dashboard`,
+				errorCallbackURL: `${window.location.origin}/login?authError=github`,
+			},
 			{
 				onSuccess: () => {
 					toast.success("Your PasinPay account is ready");

@@ -17,15 +17,18 @@ import {
 	ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useAccount, useConnect, useSignMessage, useSwitchChain } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
 import { authClient } from "@/lib/auth-client";
+import { activeChain } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function SettingsPage() {
 	const { data: session } = authClient.useSession();
 	const { address, chainId } = useAccount();
+	const { connectAsync, connectors } = useConnect();
 	const { signMessageAsync } = useSignMessage();
+	const { switchChainAsync } = useSwitchChain();
 	const challenge = useMutation(
 		trpc.bounties.walletChallenge.mutationOptions(),
 	);
@@ -40,18 +43,38 @@ export default function SettingsPage() {
 	const [message, setMessage] = useState<string | null>(null);
 
 	async function connectWallet() {
-		if (!address || !chainId) return setMessage("Connect a wallet first.");
-		if (chainId !== 421614 && chainId !== 42161)
-			return setMessage(
-				"Switch to Arbitrum One or Arbitrum Sepolia before linking your wallet.",
-			);
 		try {
-			const result = await challenge.mutateAsync({ address, chainId });
+			let linkedAddress = address;
+			let linkedChainId = chainId;
+			if (!linkedAddress) {
+				const connector = connectors[0];
+				if (!connector) return setMessage("No browser wallet was detected.");
+				const connection = await connectAsync({
+					connector,
+					chainId: activeChain.id,
+				});
+				linkedAddress = connection.accounts[0];
+				linkedChainId = connection.chainId;
+			}
+			if (!linkedAddress || !linkedChainId)
+				return setMessage("Connect a wallet first.");
+			if (linkedChainId !== activeChain.id) {
+				await switchChainAsync({ chainId: activeChain.id });
+				linkedChainId = activeChain.id;
+			}
+			if (linkedChainId !== 421614 && linkedChainId !== 42161)
+				return setMessage(
+					"Switch to Arbitrum One or Arbitrum Sepolia before linking your wallet.",
+				);
+			const result = await challenge.mutateAsync({
+				address: linkedAddress,
+				chainId: linkedChainId,
+			});
 			const signature = await signMessageAsync({ message: result.message });
 			await linkWallet.mutateAsync({
 				nonce: result.nonce,
-				address,
-				chainId,
+				address: linkedAddress,
+				chainId: linkedChainId,
 				signature,
 			});
 			setMessage("Wallet linked successfully.");
@@ -108,7 +131,8 @@ export default function SettingsPage() {
 									onClick={() =>
 										authClient.signIn.social({
 											provider: "github",
-											callbackURL: "/settings",
+											callbackURL: `${window.location.origin}/settings`,
+											errorCallbackURL: `${window.location.origin}/settings?authError=github`,
 										})
 									}
 								>
@@ -172,7 +196,11 @@ export default function SettingsPage() {
 										: "No wallet connected"}
 								</p>
 								<p className="mt-1 text-muted-foreground text-sm">
-									{chainId === 42161 ? "Arbitrum One" : "Arbitrum Sepolia"}
+									{chainId === 42161
+										? "Arbitrum One"
+										: chainId === 421614
+											? "Arbitrum Sepolia"
+											: "Network not connected"}
 								</p>
 							</div>
 							<Button
@@ -183,7 +211,9 @@ export default function SettingsPage() {
 							>
 								{challenge.isPending || linkWallet.isPending
 									? "Linking…"
-									: "Link wallet"}
+									: address
+										? "Link wallet"
+										: "Connect & link wallet"}
 							</Button>
 						</CardContent>
 					</Card>
