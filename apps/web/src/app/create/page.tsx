@@ -339,7 +339,10 @@ export default function CreateBountyPage() {
 											variant={
 												creationMode === "existing" ? "secondary" : "outline"
 											}
-											onClick={() => setCreationMode("existing")}
+											onClick={() => {
+												setCreationMode("existing");
+												setIssueBody("");
+											}}
 										>
 											<Search data-icon="inline-start" /> Use an existing issue
 										</Button>
@@ -347,7 +350,12 @@ export default function CreateBountyPage() {
 											type="button"
 											size="sm"
 											variant={creationMode === "new" ? "secondary" : "outline"}
-											onClick={() => setCreationMode("new")}
+											onClick={() => {
+												setCreationMode("new");
+												setIssueNumber("");
+												setIssueTitle("");
+												setIssueUrl("");
+											}}
 										>
 											<Plus data-icon="inline-start" /> Create a new issue
 										</Button>
@@ -553,7 +561,9 @@ export default function CreateBountyPage() {
 							</p>
 							<p className="mt-1 text-muted-foreground text-sm">
 								{repository || "owner/repository"}
-								{issueNumber && ` · Issue #${issueNumber}`}
+								{creationMode === "existing" &&
+									issueNumber &&
+									` · Issue #${issueNumber}`}
 							</p>
 						</div>
 						<div className="space-y-2 border-t pt-5 text-sm">
