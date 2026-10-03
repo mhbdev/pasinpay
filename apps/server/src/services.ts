@@ -7,6 +7,7 @@ import { ENV } from "./env.server";
 import {
 	createIssue,
 	linkIssue,
+	listAppInstallations,
 	listInstallationRepositories,
 	listRepositoryIssues,
 } from "./lib/github";
@@ -22,6 +23,7 @@ export const publicClient = createPublicClient({
 
 export const githubService = {
 	appSlug: ENV.GITHUB_APP_SLUG,
+	listAppInstallations,
 	listInstallationRepositories,
 	listRepositoryIssues,
 	createIssue,

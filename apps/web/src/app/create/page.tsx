@@ -17,6 +17,13 @@ import {
 	PopoverTrigger,
 } from "@pasinpay/ui/components/popover";
 import { ScrollArea } from "@pasinpay/ui/components/scroll-area";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@pasinpay/ui/components/select";
 import { Textarea } from "@pasinpay/ui/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -307,25 +314,26 @@ export default function CreateBountyPage() {
 								</div>
 								<div className="flex flex-col gap-2 sm:col-span-2">
 									<Label htmlFor="repository">Repository</Label>
-									<select
-										id="repository"
-										className="h-9 w-full rounded-none border bg-background px-3 text-sm"
+									<Select
 										value={repository}
-										onChange={(event) => {
-											setRepository(event.target.value);
+										onValueChange={(value) => {
+											setRepository(value ?? "");
 											setIssueNumber("");
 											setIssueTitle("");
 											setIssueUrl("");
 										}}
-										required
 									>
-										<option value="">Select an installed repository</option>
-										{repositories.data?.map((item) => (
-											<option key={item.id} value={item.fullName}>
-												{item.fullName}
-											</option>
-										))}
-									</select>
+										<SelectTrigger id="repository" className="w-full">
+											<SelectValue placeholder="Select an installed repository" />
+										</SelectTrigger>
+										<SelectContent>
+											{repositories.data?.map((item) => (
+												<SelectItem key={item.id} value={item.fullName}>
+													{item.fullName}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 									{!repositories.isLoading && !repositories.data?.length && (
 										<p className="text-muted-foreground text-sm">
 											No installed repositories yet. Sync them from{" "}

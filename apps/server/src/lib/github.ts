@@ -9,6 +9,15 @@ export type GitHubInstallationRepository = {
 	html_url: string;
 };
 
+export type GitHubAppInstallation = {
+	id: number;
+	account: {
+		id: number;
+		login: string;
+		type: string;
+	};
+};
+
 export type GitHubIssue = {
 	number: number;
 	title: string;
@@ -53,6 +62,20 @@ export async function createInstallationToken(installationId: string) {
 	if (!response.ok)
 		throw new Error(`GitHub installation token failed: ${response.status}`);
 	return ((await response.json()) as { token: string }).token;
+}
+
+export async function listAppInstallations() {
+	const jwt = await createGitHubAppJwt();
+	const installations: GitHubAppInstallation[] = [];
+	for (let page = 1; page <= 10; page += 1) {
+		const result = await githubRequest<GitHubAppInstallation[]>(
+			`/app/installations?per_page=100&page=${page}`,
+			jwt,
+		);
+		installations.push(...result);
+		if (result.length < 100) break;
+	}
+	return installations;
 }
 
 export async function githubRequest<T>(

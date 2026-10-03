@@ -155,14 +155,61 @@ export const bountyRouter = router({
 	}),
 
 	refreshRepositories: protectedProcedure.mutation(async ({ ctx }) => {
-		const installations = await ctx.db
+		const existingInstallations = await ctx.db
 			.select()
 			.from(githubInstallation)
 			.where(eq(githubInstallation.userId, ctx.session.user.id));
-		if (!installations.length) {
+		const [githubAccount] = await ctx.db
+			.select({ accountId: account.accountId })
+			.from(account)
+			.where(
+				and(
+					eq(account.userId, ctx.session.user.id),
+					eq(account.providerId, "github"),
+				),
+			)
+			.limit(1);
+		if (!githubAccount) {
+			throw new Error("Connect GitHub before syncing repositories");
+		}
+
+		const appInstallations = await ctx.github.listAppInstallations();
+		const matchedAppInstallations = appInstallations.filter(
+			(installation) =>
+				String(installation.account.id) === githubAccount.accountId,
+		);
+		if (!matchedAppInstallations.length && !existingInstallations.length) {
 			throw new Error(
 				"Install the PasinPay GitHub App before syncing repositories",
 			);
+		}
+
+		const installations = existingInstallations.slice();
+		for (const remoteInstallation of matchedAppInstallations) {
+			const [installation] = await ctx.db
+				.insert(githubInstallation)
+				.values({
+					installationId: String(remoteInstallation.id),
+					accountLogin: remoteInstallation.account.login,
+					accountType: remoteInstallation.account.type,
+					userId: ctx.session.user.id,
+				})
+				.onConflictDoUpdate({
+					target: githubInstallation.installationId,
+					set: {
+						accountLogin: remoteInstallation.account.login,
+						accountType: remoteInstallation.account.type,
+						userId: ctx.session.user.id,
+						updatedAt: new Date(),
+					},
+				})
+				.returning();
+			if (
+				installation &&
+				!installations.some((item) => item.id === installation.id)
+			) {
+				installations.push(installation);
+			}
 		}
 
 		let synced = 0;
