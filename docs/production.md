@@ -7,8 +7,8 @@ This checklist separates the free Arbitrum Sepolia testnet path from the value-b
 The initial testnet escrow deployment was completed on 2026-10-03:
 
 - Chain: Arbitrum Sepolia (`421614`)
-- Escrow: `0x1BC0ACE2be823C5c94dF45dD6ee7D20624f03D21`
-- Deployment transaction: `0xf0e765c78562181a2b26da74478c7baa3c7b85656a15d3d7ca68faa28abfdca6`
+- Escrow: `0x19B6944FB4748831D1B8462dDbD53F32655E1AF7`
+- Deployment transaction: `0xd78363181ba5e590b508904664c7b67503ffe443281c117d7a10efcf02b1ea61`
 - USDG: `0xFFC95faa3d63Cde504a05B567C600B78C0b41892` (`USDG`, 6 decimals)
 
 The deployment was verified by reading the deployed bytecode and constructor-configured USDG, attestor, owner, and `nextBountyId` values from the chain. The owner is currently the testnet deployment owner account; transfer ownership to a Safe before any value-bearing production deployment.
