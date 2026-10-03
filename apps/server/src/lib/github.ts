@@ -1,4 +1,5 @@
-import { importPKCS8, SignJWT } from "jose";
+import { createPrivateKey } from "node:crypto";
+import { SignJWT } from "jose";
 
 import { ENV } from "../env.server";
 
@@ -37,7 +38,11 @@ export async function createGitHubAppJwt() {
 		"GITHUB_APP_PRIVATE_KEY",
 		ENV.GITHUB_APP_PRIVATE_KEY,
 	).replace(/\\n/g, "\n");
-	const key = await importPKCS8(privateKey, "RS256");
+	const key = createPrivateKey({
+		key: privateKey,
+		format: "pem",
+		type: privateKey.includes("BEGIN RSA PRIVATE KEY") ? "pkcs1" : "pkcs8",
+	});
 	return new SignJWT({})
 		.setProtectedHeader({ alg: "RS256", typ: "JWT" })
 		.setIssuedAt(Math.floor(Date.now() / 1000) - 60)
