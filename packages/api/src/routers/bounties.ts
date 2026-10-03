@@ -9,7 +9,18 @@ import {
 	walletLink,
 	walletLinkChallenge,
 } from "@pasinpay/db/schema/index";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	gt,
+	ilike,
+	isNull,
+	or,
+	sql,
+} from "drizzle-orm";
 import { getAddress, keccak256, toBytes, verifyMessage } from "viem";
 import { z } from "zod";
 
@@ -241,14 +252,80 @@ export const bountyRouter = router({
 		return { synced };
 	}),
 
-	list: publicProcedure.query(async ({ ctx }) => {
-		const rows = await ctx.db
-			.select()
-			.from(bounty)
-			.orderBy(desc(bounty.createdAt))
-			.limit(50);
-		return rows.map(serializeBounty);
-	}),
+	list: publicProcedure
+		.input(
+			z.object({
+				search: z.string().trim().max(100).default(""),
+				status: z
+					.enum([
+						"all",
+						"Open",
+						"Funded",
+						"ClaimPending",
+						"Paid",
+						"Disputed",
+						"Refunded",
+						"Cancelled",
+					])
+					.default("all"),
+				repository: z.string().trim().max(200).default(""),
+				sort: z
+					.enum(["newest", "oldest", "reward_high", "reward_low"])
+					.default("newest"),
+				page: z.number().int().positive().default(1),
+				pageSize: z.number().int().min(6).max(24).default(12),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const filters = [];
+			if (input.search) {
+				const query = `%${input.search}%`;
+				filters.push(
+					or(
+						ilike(bounty.title, query),
+						ilike(bounty.repository, query),
+						ilike(bounty.issueTitle, query),
+					),
+				);
+			}
+			if (input.status !== "all") filters.push(eq(bounty.status, input.status));
+			if (input.repository)
+				filters.push(eq(bounty.repository, input.repository));
+
+			const where = filters.length ? and(...filters) : undefined;
+			const orderBy = {
+				newest: desc(bounty.createdAt),
+				oldest: asc(bounty.createdAt),
+				reward_high: desc(bounty.amount),
+				reward_low: asc(bounty.amount),
+			}[input.sort];
+			const offset = (input.page - 1) * input.pageSize;
+
+			const [countRow, rows, repositoryRows] = await Promise.all([
+				ctx.db.select({ total: count() }).from(bounty).where(where),
+				ctx.db
+					.select()
+					.from(bounty)
+					.where(where)
+					.orderBy(orderBy)
+					.limit(input.pageSize)
+					.offset(offset),
+				ctx.db
+					.selectDistinct({ repository: bounty.repository })
+					.from(bounty)
+					.orderBy(asc(bounty.repository)),
+			]);
+			const total = Number(countRow[0]?.total ?? 0);
+
+			return {
+				items: rows.map(serializeBounty),
+				total,
+				page: input.page,
+				pageSize: input.pageSize,
+				totalPages: Math.max(1, Math.ceil(total / input.pageSize)),
+				repositories: repositoryRows.map((row) => row.repository),
+			};
+		}),
 
 	getById: publicProcedure
 		.input(z.object({ id: z.string().uuid() }))
