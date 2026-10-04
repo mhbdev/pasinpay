@@ -50,6 +50,7 @@ import {
 	useSwitchChain,
 	useWriteContract,
 } from "wagmi";
+import { CopyAddress } from "@/components/copy-address";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
 import { getReadableError } from "@/lib/errors";
@@ -315,6 +316,11 @@ export default function BountyDetailPage() {
 	const reviewClosed =
 		Boolean(bounty.reviewEnds) &&
 		new Date(bounty.reviewEnds ?? 0).getTime() <= Date.now();
+	const hasCreatorAction =
+		bounty.status === "Open" ||
+		bounty.status === "ClaimPending" ||
+		((bounty.status === "Funded" || bounty.status === "ClaimPending") &&
+			isExpired);
 	const pullRequestUrl =
 		"https://github.com/" +
 		bounty.repository +
@@ -443,15 +449,11 @@ export default function BountyDetailPage() {
 							<p className="text-muted-foreground text-xs uppercase tracking-wide">
 								Creator wallet
 							</p>
-							<a
-								className="font-mono text-xs hover:underline"
+							<CopyAddress
+								address={bounty.creator.wallet}
 								href={chain?.explorerUrl + "/address/" + bounty.creator.wallet}
-								target="_blank"
-								rel="noreferrer"
-							>
-								{bounty.creator.wallet.slice(0, 10)}…
-								{bounty.creator.wallet.slice(-8)}
-							</a>
+								label="Creator wallet"
+							/>
 						</div>
 					</CardContent>
 				</Card>
@@ -608,11 +610,14 @@ export default function BountyDetailPage() {
 															: "Closed"}
 											</p>
 											{verifiedClaim && (
-												<p className="mt-1 font-mono text-muted-foreground text-xs">
-													Payout wallet{" "}
-													{verifiedClaim.claimantWallet.slice(0, 10)}…
-													{verifiedClaim.claimantWallet.slice(-8)}
-												</p>
+												<div className="mt-1 flex items-center gap-1 text-muted-foreground text-xs">
+													<span>Payout wallet</span>
+													<CopyAddress
+														address={verifiedClaim.claimantWallet}
+														href={`${chain?.explorerUrl}/address/${verifiedClaim.claimantWallet}`}
+														label="Payout wallet"
+													/>
+												</div>
 											)}
 										</div>
 										<Button
@@ -653,25 +658,27 @@ export default function BountyDetailPage() {
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">TOKEN</p>
-							<a
-								className="mt-1 block font-mono text-xs underline"
-								href={`${chain?.explorerUrl}/address/${chain?.tokenAddress}`}
-								target="_blank"
-								rel="noreferrer"
-							>
-								{chain?.tokenAddress}
-							</a>
+							<div className="mt-1">
+								{chain?.tokenAddress && (
+									<CopyAddress
+										address={chain.tokenAddress}
+										href={`${chain.explorerUrl}/address/${chain.tokenAddress}`}
+										label="Token address"
+									/>
+								)}
+							</div>
 						</div>
 						<div className="sm:col-span-2">
 							<p className="text-muted-foreground text-xs">ESCROW CONTRACT</p>
-							<a
-								className="mt-1 block break-all font-mono text-xs underline"
-								href={`${chain?.explorerUrl}/address/${chain?.escrowAddress}`}
-								target="_blank"
-								rel="noreferrer"
-							>
-								{chain?.escrowAddress}
-							</a>
+							<div className="mt-1">
+								{chain?.escrowAddress && (
+									<CopyAddress
+										address={chain.escrowAddress}
+										href={`${chain.explorerUrl}/address/${chain.escrowAddress}`}
+										label="Escrow contract"
+									/>
+								)}
+							</div>
 						</div>
 						{bounty.settlement?.transactionHash && (
 							<div className="sm:col-span-2">
@@ -785,13 +792,14 @@ export default function BountyDetailPage() {
 									onConfirm={() => void call("finalizeClaim")}
 								/>
 							)}
-							{bounty.status !== "Open" &&
-								bounty.status !== "ClaimPending" &&
+							{!hasCreatorAction &&
 								bounty.status !== "Paid" &&
 								bounty.status !== "Refunded" &&
 								bounty.status !== "Cancelled" && (
 									<p className="text-muted-foreground text-xs">
-										This state is controlled by the contract owner.
+										No creator action is available while this bounty is funded
+										and within its deadline. Review actions appear after a
+										verified claim; refund becomes available after the deadline.
 									</p>
 								)}
 						</CardContent>
@@ -811,7 +819,7 @@ export default function BountyDetailPage() {
 								title="Copy PR title marker"
 							>
 								[PasinPay #{bounty.issueNumber}]
-								<Copy aria-hidden="true" data-icon="inline-end" />
+								<Copy aria-hidden="true" className="size-3" />
 							</button>{" "}
 							in the title. Once merged, PasinPay verifies the evidence.
 						</p>

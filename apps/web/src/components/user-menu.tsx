@@ -9,11 +9,12 @@ import {
 	DropdownMenuTrigger,
 } from "@pasinpay/ui/components/dropdown-menu";
 import { Skeleton } from "@pasinpay/ui/components/skeleton";
-import { UserRound } from "lucide-react";
+import { Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
+import { WalletMenuAction } from "./wallet-button";
 
 export default function UserMenu() {
 	const router = useRouter();
@@ -42,11 +43,19 @@ export default function UserMenu() {
 				</span>
 				<span className="sr-only">Account menu</span>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent className="bg-card">
+			<DropdownMenuContent align="end" className="w-72 bg-card">
 				<DropdownMenuGroup>
-					<DropdownMenuLabel>My Account</DropdownMenuLabel>
+					<DropdownMenuLabel className="flex flex-col gap-1">
+						<span className="font-medium text-foreground">My Account</span>
+						<span className="truncate">{session.user.email}</span>
+					</DropdownMenuLabel>
 					<DropdownMenuSeparator />
-					<DropdownMenuItem>{session.user.email}</DropdownMenuItem>
+					<WalletMenuAction />
+					<DropdownMenuSeparator />
+					<DropdownMenuItem render={<Link href="/settings" />}>
+						<Settings />
+						Settings
+					</DropdownMenuItem>
 					<DropdownMenuItem
 						variant="destructive"
 						onClick={() => {

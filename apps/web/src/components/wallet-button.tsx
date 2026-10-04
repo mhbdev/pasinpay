@@ -11,6 +11,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@pasinpay/ui/components/dialog";
+import { DropdownMenuItem } from "@pasinpay/ui/components/dropdown-menu";
 import { Wallet } from "lucide-react";
 import { useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
@@ -85,6 +86,76 @@ export function WalletButton() {
 			<Wallet data-icon="inline-start" />
 			{isPending ? "Connecting…" : "Connect wallet"}
 		</Button>
+	);
+}
+
+export function WalletMenuAction() {
+	const [disconnectOpen, setDisconnectOpen] = useState(false);
+	const { address, chainId, isConnected } = useAccount();
+	const { connect, connectors, isPending } = useConnect();
+	const { disconnect } = useDisconnect();
+	const { switchChain } = useSwitchChain();
+	const { chainConfig } = useAppNetwork();
+	const connector = connectors[0];
+
+	if (!isConnected || !address) {
+		return (
+			<DropdownMenuItem
+				disabled={isPending || !connector}
+				onClick={() =>
+					connector && connect({ connector, chainId: chainConfig.id })
+				}
+			>
+				<Wallet />
+				{isPending ? "Connecting…" : "Connect wallet"}
+			</DropdownMenuItem>
+		);
+	}
+
+	if (chainId !== chainConfig.id) {
+		return (
+			<DropdownMenuItem
+				onClick={() => switchChain({ chainId: chainConfig.id })}
+			>
+				<Wallet />
+				Switch to {chainConfig.name}
+			</DropdownMenuItem>
+		);
+	}
+
+	return (
+		<Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
+			<DialogTrigger render={<DropdownMenuItem />}>
+				<Wallet />
+				<span>Wallet</span>
+				<span className="ml-auto font-mono text-muted-foreground text-xs">
+					{shortAddress(address)}
+				</span>
+			</DialogTrigger>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Disconnect wallet?</DialogTitle>
+					<DialogDescription>
+						Your wallet will be disconnected from this browser session. Your
+						PasinPay account link remains unchanged.
+					</DialogDescription>
+				</DialogHeader>
+				<DialogFooter>
+					<DialogClose render={<Button variant="outline" />}>
+						Keep connected
+					</DialogClose>
+					<Button
+						variant="destructive"
+						onClick={() => {
+							disconnect();
+							setDisconnectOpen(false);
+						}}
+					>
+						Disconnect wallet
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
