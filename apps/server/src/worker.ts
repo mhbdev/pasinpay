@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { claimDigest } from "@pasinpay/chain";
+import { claimDigest, escrowAbi } from "@pasinpay/chain";
 import {
 	account,
 	bounty,
@@ -14,6 +14,10 @@ import {
 import { and, eq, isNull, lt } from "drizzle-orm";
 import type { Hex } from "viem";
 import { signClaim } from "./lib/attestor";
+import {
+	getAttestationExpiry,
+	isAttestationExpired,
+} from "./lib/claim-attestation";
 import {
 	createInstallationToken,
 	githubRequest,
@@ -383,13 +387,18 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 	if (!wallet)
 		throw new Error(`GitHub user ${pr.user.login} has no linked wallet`);
 
+	const onchainBounty = await publicClient.readContract({
+		address: chainConfig.escrowAddress,
+		abi: escrowAbi,
+		functionName: "bounties",
+		args: [onchainBountyId],
+	});
+	// The database can briefly lag chain reconciliation. Never refresh or
+	// create an attestation once the escrow has moved beyond Funded.
+	if (Number(onchainBounty[11]) !== 1) return;
 	const mergeCommit = shaToBytes32(pr.merge_commit_sha);
-	const expiresAt = Math.min(
-		Math.floor(bountyRow.deadline.getTime() / 1000) - 30,
-		Math.floor(Date.now() / 1000) + 3600,
-	);
-	if (expiresAt <= Math.floor(Date.now() / 1000))
-		throw new Error("No time remains for an attestation");
+	const attestationExpiresAt = getAttestationExpiry(bountyRow.deadline);
+	const expiresAt = BigInt(Math.floor(attestationExpiresAt.getTime() / 1000));
 	const message = {
 		bountyId: onchainBountyId,
 		repositoryHash: bountyRow.repositoryHash as Hex,
@@ -413,7 +422,10 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 
 	await db.transaction(async (tx) => {
 		const [existing] = await tx
-			.select({ id: claim.id })
+			.select({
+				id: claim.id,
+				attestationExpiresAt: claim.attestationExpiresAt,
+			})
 			.from(claim)
 			.where(
 				and(
@@ -422,7 +434,43 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 				),
 			)
 			.limit(1);
-		if (existing) return;
+		if (existing && !isAttestationExpired(existing.attestationExpiresAt))
+			return;
+		if (existing) {
+			// A merged PR can remain valid while a contributor is away for more
+			// than the one-hour attestation window. Refresh only the expired
+			// attestation; the unique bounty constraint still guarantees that a
+			// competing PR cannot replace the winner.
+			await tx
+				.update(claim)
+				.set({
+					mergeCommitSha,
+					claimantWallet: wallet.walletAddress,
+					attestationDigest: digest,
+					attestationSignature: signature,
+					attestationNonce: message.nonce,
+					attestationExpiresAt,
+					githubDeliveryId: jobPayload.deliveryId ?? job.id,
+					evidence: {
+						repository,
+						issueNumber: bountyRow.issueNumber,
+						prNumber: pr.number,
+						commitHash: pr.merge_commit_sha,
+						authorLogin: pr.user?.login,
+						prUrl: pr.html_url,
+					},
+				})
+				.where(eq(claim.id, existing.id));
+			await tx
+				.update(bounty)
+				.set({
+					claimantWallet: wallet.walletAddress,
+					claimDigest: digest,
+					updatedAt: new Date(),
+				})
+				.where(eq(bounty.id, bountyRow.id));
+			return;
+		}
 		const [inserted] = await tx
 			.insert(claim)
 			.values({
@@ -433,7 +481,7 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 				attestationDigest: digest,
 				attestationSignature: signature,
 				attestationNonce: message.nonce,
-				attestationExpiresAt: new Date(expiresAt * 1000),
+				attestationExpiresAt,
 				githubDeliveryId: jobPayload.deliveryId ?? job.id,
 				evidence: {
 					repository,
