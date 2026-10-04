@@ -129,6 +129,7 @@ export const claim = pgTable(
 	},
 	(table) => [
 		uniqueIndex("claim_bounty_pr_idx").on(table.bountyId, table.githubPrNumber),
+		uniqueIndex("claim_bounty_idx").on(table.bountyId),
 	],
 );
 

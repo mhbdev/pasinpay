@@ -423,25 +423,33 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 			)
 			.limit(1);
 		if (existing) return;
-		await tx.insert(claim).values({
-			bountyId: bountyRow.id,
-			githubPrNumber: prNumber,
-			mergeCommitSha,
-			claimantWallet: wallet.walletAddress,
-			attestationDigest: digest,
-			attestationSignature: signature,
-			attestationNonce: message.nonce,
-			attestationExpiresAt: new Date(expiresAt * 1000),
-			githubDeliveryId: jobPayload.deliveryId ?? job.id,
-			evidence: {
-				repository,
-				issueNumber: bountyRow.issueNumber,
-				prNumber: pr.number,
-				commitHash: pr.merge_commit_sha,
-				authorLogin: pr.user?.login,
-				prUrl: pr.html_url,
-			},
-		});
+		const [inserted] = await tx
+			.insert(claim)
+			.values({
+				bountyId: bountyRow.id,
+				githubPrNumber: prNumber,
+				mergeCommitSha,
+				claimantWallet: wallet.walletAddress,
+				attestationDigest: digest,
+				attestationSignature: signature,
+				attestationNonce: message.nonce,
+				attestationExpiresAt: new Date(expiresAt * 1000),
+				githubDeliveryId: jobPayload.deliveryId ?? job.id,
+				evidence: {
+					repository,
+					issueNumber: bountyRow.issueNumber,
+					prNumber: pr.number,
+					commitHash: pr.merge_commit_sha,
+					authorLogin: pr.user?.login,
+					prUrl: pr.html_url,
+				},
+			})
+			.onConflictDoNothing({ target: claim.bountyId })
+			.returning({ id: claim.id });
+		// A second merged PR can race the first one. The unique bounty index
+		// makes the first attestation canonical; never overwrite its digest or
+		// recipient with a later competing submission.
+		if (!inserted) return;
 		await tx
 			.update(bounty)
 			.set({
