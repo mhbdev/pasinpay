@@ -398,7 +398,11 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		commitHash: mergeCommit,
 		recipient: wallet.walletAddress as `0x${string}`,
 		expiresAt: BigInt(expiresAt),
-		nonce: BigInt(`0x${randomBytes(16).toString("hex")}`),
+		// The contract accepts a uint256 nonce, while Postgres stores the
+		// mirrored nonce in a signed bigint. Keep it positive and within the
+		// database range; uniqueness and replay protection remain enforced by
+		// the typed digest and the contract's one-time settlement state.
+		nonce: BigInt(`0x${randomBytes(8).toString("hex")}`) & ((1n << 63n) - 1n),
 	};
 	const { signature } = await signClaim(message);
 	const digest = claimDigest(
