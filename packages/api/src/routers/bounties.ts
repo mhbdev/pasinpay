@@ -341,8 +341,13 @@ export const bountyRouter = router({
 			const [countRow, rows, repositoryRows] = await Promise.all([
 				ctx.db.select({ total: count() }).from(bounty).where(where),
 				ctx.db
-					.select()
+					.select({
+						bounty,
+						creatorName: user.name,
+						creatorImage: user.image,
+					})
 					.from(bounty)
+					.leftJoin(user, eq(user.id, bounty.userId))
 					.where(where)
 					.orderBy(orderBy)
 					.limit(input.pageSize)
@@ -355,7 +360,13 @@ export const bountyRouter = router({
 			const total = Number(countRow[0]?.total ?? 0);
 
 			return {
-				items: rows.map(serializeBounty),
+				items: rows.map((row) => ({
+					...serializeBounty(row.bounty),
+					creator: {
+						name: row.creatorName ?? "PasinPay creator",
+						image: row.creatorImage ?? null,
+					},
+				})),
 				total,
 				page: input.page,
 				pageSize: input.pageSize,

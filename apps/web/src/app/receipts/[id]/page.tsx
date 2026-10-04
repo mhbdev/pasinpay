@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@pasinpay/ui/components/badge";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -39,8 +40,25 @@ export default function ReceiptPage() {
 		return (
 			<main className="mx-auto max-w-3xl px-5 py-16">Receipt not found.</main>
 		);
-	const evidence = claim?.evidence as { commitHash?: string } | undefined;
+	const evidence = claim?.evidence as
+		| {
+				commitHash?: string;
+				prUrl?: string;
+		  }
+		| undefined;
 	const transactionHash = bounty.settlement?.transactionHash;
+	const commitHash = evidence?.commitHash ?? claim?.mergeCommitSha;
+	const pullRequestUrl =
+		evidence?.prUrl ??
+		(claim
+			? `https://github.com/${bounty.repository}/pull/${claim.githubPrNumber}`
+			: null);
+	const commitUrl = commitHash
+		? `https://github.com/${bounty.repository}/commit/${commitHash}`
+		: null;
+	const payoutUrl = bounty.claimantWallet
+		? `${chainConfig.explorerUrl}/address/${bounty.claimantWallet}`
+		: null;
 	return (
 		<main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-5 py-16">
 			<div>
@@ -63,9 +81,19 @@ export default function ReceiptPage() {
 					</CardTitle>
 					<p className="text-muted-foreground text-sm">
 						Paid to{" "}
-						{bounty.claimantWallet
-							? `${bounty.claimantWallet.slice(0, 8)}…${bounty.claimantWallet.slice(-6)}`
-							: "verified claimant"}
+						{payoutUrl ? (
+							<a
+								className="font-mono underline underline-offset-2 hover:text-foreground"
+								href={payoutUrl}
+								target="_blank"
+								rel="noreferrer"
+							>
+								{bounty.claimantWallet?.slice(0, 8)}…
+								{bounty.claimantWallet?.slice(-6)}
+							</a>
+						) : (
+							"verified claimant"
+						)}
 					</p>
 				</CardHeader>
 				<CardContent className="grid gap-6 sm:grid-cols-2">
@@ -77,24 +105,45 @@ export default function ReceiptPage() {
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">GITHUB</p>
-						<p className="mt-1 flex items-center gap-2 font-medium">
-							<GitPullRequest className="size-4" /> PR #
-							{claim?.githubPrNumber ?? "—"}
-						</p>
+						{pullRequestUrl ? (
+							<a
+								className="mt-1 flex items-center gap-2 font-medium underline underline-offset-2 hover:text-foreground"
+								href={pullRequestUrl}
+								target="_blank"
+								rel="noreferrer"
+							>
+								<GitPullRequest data-icon="inline-start" /> PR #
+								{claim?.githubPrNumber ?? "—"}
+							</a>
+						) : (
+							<p className="mt-1 flex items-center gap-2 font-medium">
+								<GitPullRequest data-icon="inline-start" /> PR #—
+							</p>
+						)}
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">COMMIT</p>
-						<p className="mt-1 flex items-center gap-2 font-mono text-xs">
-							<GitCommitHorizontal className="size-4" />{" "}
-							{evidence?.commitHash?.slice(0, 12) ??
-								claim?.mergeCommitSha?.slice(0, 12) ??
-								"—"}
-							…
-						</p>
+						{commitUrl ? (
+							<a
+								className="mt-1 flex items-center gap-2 font-mono text-xs underline underline-offset-2 hover:text-foreground"
+								href={commitUrl}
+								target="_blank"
+								rel="noreferrer"
+							>
+								<GitCommitHorizontal data-icon="inline-start" />{" "}
+								{commitHash?.slice(0, 12)}…
+							</a>
+						) : (
+							<p className="mt-1 flex items-center gap-2 font-mono text-xs">
+								<GitCommitHorizontal data-icon="inline-start" /> —
+							</p>
+						)}
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">VERIFIED BY</p>
-						<p className="mt-1 font-medium">PasinPay Attestor</p>
+						<Badge className="mt-1" variant="default">
+							<ShieldCheck data-icon="inline-start" /> PasinPay Attestor
+						</Badge>
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">NETWORK</p>

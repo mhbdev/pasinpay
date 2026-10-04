@@ -25,14 +25,14 @@ export function NetworkSelector() {
 				<SelectTrigger
 					aria-label="Select Arbitrum network"
 					size="sm"
-					className="w-[140px] text-xs"
+					className="w-[190px] text-xs"
 					title={error ?? undefined}
 				>
 					<SelectValue>
 						{switching ? "Switching…" : chainConfig.name}
 					</SelectValue>
 				</SelectTrigger>
-				<SelectContent>
+				<SelectContent className="min-w-[190px]">
 					<SelectItem value="421614">Arbitrum Sepolia · Testnet</SelectItem>
 					<SelectItem value="42161">Arbitrum One · Mainnet</SelectItem>
 				</SelectContent>

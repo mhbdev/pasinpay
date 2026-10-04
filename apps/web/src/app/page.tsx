@@ -144,23 +144,39 @@ export default function Home() {
 				aria-label="PasinPay platform metrics"
 				className="border-y bg-muted/20"
 			>
-				<div className="mx-auto grid max-w-6xl gap-px px-5 py-8 sm:grid-cols-2 lg:grid-cols-4">
-					{metrics.map(({ icon: Icon, label, value }) => (
-						<div
-							className="flex items-center gap-4 border-l px-5 first:border-l-0"
-							key={label}
-						>
-							<div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-								<Icon aria-hidden="true" />
-							</div>
-							<div>
-								<p className="font-semibold text-2xl tabular-nums tracking-tight">
-									{value.toLocaleString()}
-								</p>
-								<p className="text-muted-foreground text-sm">{label}</p>
-							</div>
+				<div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-12">
+					<div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+						<div>
+							<p className="font-medium text-muted-foreground text-sm">
+								THE NETWORK
+							</p>
+							<h2 className="mt-2 font-semibold text-2xl tracking-tight">
+								PasinPay at a glance
+							</h2>
 						</div>
-					))}
+						<p className="max-w-sm text-muted-foreground text-sm leading-6 sm:text-right">
+							Live platform activity across users, funded work, and escrow.
+						</p>
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+						{metrics.map(({ icon: Icon, label, value }) => (
+							<Card key={label}>
+								<CardContent className="flex items-start gap-3">
+									<div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+										<Icon aria-hidden="true" />
+									</div>
+									<div className="min-w-0">
+										<p className="font-semibold text-2xl tabular-nums tracking-tight">
+											{value.toLocaleString()}
+										</p>
+										<p className="truncate text-muted-foreground text-sm">
+											{label}
+										</p>
+									</div>
+								</CardContent>
+							</Card>
+						))}
+					</div>
 				</div>
 			</section>
 			<section className="border-y bg-muted/20">

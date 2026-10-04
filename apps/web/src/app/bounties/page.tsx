@@ -1,5 +1,10 @@
 "use client";
 
+import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@pasinpay/ui/components/avatar";
 import { Badge } from "@pasinpay/ui/components/badge";
 import { Button } from "@pasinpay/ui/components/button";
 import {
@@ -71,6 +76,18 @@ function statusLabel(status: string) {
 	return status === "all"
 		? "All statuses"
 		: status.replace("ClaimPending", "Claim pending");
+}
+
+function statusVariant(
+	status: string,
+): "default" | "secondary" | "destructive" | "outline" {
+	if (status === "Paid") return "default";
+	if (status === "Funded") return "secondary";
+	if (status === "ClaimPending") return "outline";
+	if (["Disputed", "Refunded", "Cancelled"].includes(status)) {
+		return "destructive";
+	}
+	return "outline";
 }
 
 const sortLabels: Record<SortFilter, string> = {
@@ -350,14 +367,24 @@ function BountiesContent() {
 						<div className="divide-y">
 							{data.items.map((item) => (
 								<Link
-									className="group flex items-center justify-between gap-5 py-4 transition-colors first:pt-0 last:pb-0 hover:bg-muted/40"
+									className="group flex items-center justify-between gap-4 py-4 transition-colors first:pt-0 last:pb-0 hover:bg-muted/40"
 									href={`/bounties/${item.id}`}
 									key={item.id}
 								>
-									<div className="min-w-0">
+									<Avatar aria-hidden="true" size="sm">
+										{item.creator?.image ? (
+											<AvatarImage alt="" src={item.creator.image} />
+										) : null}
+										<AvatarFallback>
+											{(item.creator?.name ?? "PasinPay creator")
+												.slice(0, 2)
+												.toUpperCase()}
+										</AvatarFallback>
+									</Avatar>
+									<div className="min-w-0 flex-1">
 										<div className="flex flex-wrap items-center gap-2">
 											<p className="truncate font-medium">{item.title}</p>
-											<Badge variant="outline">
+											<Badge variant={statusVariant(item.status)}>
 												{statusLabel(item.status)}
 											</Badge>
 										</div>

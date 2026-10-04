@@ -11,6 +11,7 @@ import {
 	AvatarFallback,
 	AvatarImage,
 } from "@pasinpay/ui/components/avatar";
+import { Badge } from "@pasinpay/ui/components/badge";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -80,6 +81,17 @@ const statusLabels: Record<string, string> = {
 	Refunded: "REFUNDED",
 	Cancelled: "CANCELLED",
 };
+
+function statusVariant(
+	status: string,
+): "default" | "secondary" | "destructive" | "outline" {
+	if (["Paid", "Verified"].includes(status)) return "default";
+	if (["Funded", "Merged"].includes(status)) return "secondary";
+	if (["Disputed", "Refunded", "Cancelled", "Closed"].includes(status)) {
+		return "destructive";
+	}
+	return "outline";
+}
 
 const onchainStatusLabels = [
 	"Open",
@@ -480,6 +492,22 @@ export default function BountyDetailPage() {
 		bounty.issueUrl ||
 		`https://github.com/${bounty.repository}/issues/${bounty.issueNumber}`;
 	const latestClaim = bounty.claims?.[0] ?? claim;
+	const latestEvidence = latestClaim?.evidence as
+		| {
+				commitHash?: string;
+				prUrl?: string;
+		  }
+		| undefined;
+	const latestCommitHash =
+		latestEvidence?.commitHash ?? latestClaim?.mergeCommitSha;
+	const latestPullRequestUrl =
+		latestEvidence?.prUrl ??
+		(latestClaim
+			? `https://github.com/${bounty.repository}/pull/${latestClaim.githubPrNumber}`
+			: null);
+	const latestCommitUrl = latestCommitHash
+		? `https://github.com/${bounty.repository}/commit/${latestCommitHash}`
+		: null;
 	const isCreator =
 		Boolean(address) &&
 		address?.toLowerCase() === bounty.creatorWallet.toLowerCase();
@@ -549,17 +577,15 @@ export default function BountyDetailPage() {
 						<span>/</span>
 						<span>{bounty.repository}</span>
 					</div>
-					<div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-						<div>
-							<h1 className="font-semibold text-4xl tracking-tight">
-								{bounty.title}
-							</h1>
-							<p className="mt-2 text-muted-foreground">
+					<div className="mt-5">
+						<h1 className="font-semibold text-4xl tracking-tight">
+							{bounty.title}
+						</h1>
+						<div className="mt-2 flex flex-wrap items-center gap-2">
+							<p className="text-muted-foreground">
 								Issue #{bounty.issueNumber} · {bounty.repository}
 							</p>
-						</div>
-						<div className="w-fit shrink-0 rounded-full border bg-muted/40 px-3 py-1.5 font-medium text-xs sm:mt-1">
-							{status}
+							<Badge variant={statusVariant(currentStatus)}>{status}</Badge>
 						</div>
 					</div>
 					<div className="flex flex-wrap gap-2">
@@ -635,9 +661,6 @@ export default function BountyDetailPage() {
 							</AvatarFallback>
 						</Avatar>
 						<div className="min-w-0">
-							<p className="text-muted-foreground text-xs uppercase tracking-wide">
-								Created by
-							</p>
 							<p className="font-medium">{bounty.creator.name}</p>
 							{bounty.creator.githubUrl && bounty.creator.githubLogin && (
 								<a
@@ -744,23 +767,46 @@ export default function BountyDetailPage() {
 					<CardContent className="grid gap-5 text-sm sm:grid-cols-2">
 						<div>
 							<p className="text-muted-foreground text-xs">PULL REQUEST</p>
-							<p className="mt-1 font-medium">
-								{latestClaim
-									? `PR #${latestClaim.githubPrNumber}`
-									: "Waiting for merge"}
-							</p>
+							{latestPullRequestUrl && latestClaim ? (
+								<a
+									className="mt-1 inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:text-foreground"
+									href={latestPullRequestUrl}
+									target="_blank"
+									rel="noreferrer"
+								>
+									PR #{latestClaim.githubPrNumber}{" "}
+									<ExternalLink className="size-3" />
+								</a>
+							) : (
+								<p className="mt-1 font-medium">Waiting for merge</p>
+							)}
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">MERGE COMMIT</p>
-							<p className="mt-1 font-mono text-xs">
-								{latestClaim?.mergeCommitSha
-									? `${latestClaim.mergeCommitSha.slice(0, 10)}…`
-									: "—"}
-							</p>
+							{latestCommitUrl ? (
+								<a
+									className="mt-1 inline-flex items-center gap-1 font-mono text-xs underline underline-offset-2 hover:text-foreground"
+									href={latestCommitUrl}
+									target="_blank"
+									rel="noreferrer"
+								>
+									{latestCommitHash?.slice(0, 10)}…{" "}
+									<ExternalLink className="size-3" />
+								</a>
+							) : (
+								<p className="mt-1 font-mono text-xs">—</p>
+							)}
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">REPOSITORY</p>
-							<p className="mt-1 font-medium">{bounty.repository}</p>
+							<a
+								className="mt-1 inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:text-foreground"
+								href={`https://github.com/${bounty.repository}`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								{bounty.repository} <ExternalLink className="size-3" />
+							</a>
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">NETWORK</p>
@@ -797,9 +843,9 @@ export default function BountyDetailPage() {
 												>
 													PR #{pullRequest.number} · {pullRequest.title}
 												</a>
-												<span className="rounded-full border px-2 py-0.5 font-medium text-[11px]">
+												<Badge variant={statusVariant(pullRequest.status)}>
 													{pullRequest.status.toUpperCase()}
-												</span>
+												</Badge>
 											</div>
 											<p className="mt-1 text-muted-foreground text-xs">
 												{pullRequest.authorLogin
@@ -1045,52 +1091,65 @@ export default function BountyDetailPage() {
 										onConfirm={() => void call("finalizeClaim")}
 									/>
 								)}
-								{!hasCreatorAction &&
-									!["Paid", "Refunded", "Cancelled"].includes(
-										currentStatus,
-									) && (
-										<p className="text-muted-foreground text-xs">
-											{currentStatus === "Funded"
-												? "No creator action is available while this bounty is funded and within its deadline."
-												: currentStatus === "ClaimPending" && !approved
-													? "The claim is waiting for creator approval."
-													: currentStatus === "ClaimPending"
-														? "The claim is approved and waiting for the review window to end before finalization."
-														: "No creator action is available for this on-chain state."}
-										</p>
-									)}
+								{!hasCreatorAction && (
+									<Alert>
+										<Info />
+										<AlertTitle>
+											{["Paid", "Refunded", "Cancelled"].includes(currentStatus)
+												? "Escrow concluded"
+												: "No creator action available"}
+										</AlertTitle>
+										<AlertDescription>
+											{currentStatus === "Paid"
+												? "The approved claim has been finalized and the reward has been released. No further creator action is possible."
+												: currentStatus === "Refunded"
+													? "The escrow has been refunded after expiry. No further creator action is possible."
+													: currentStatus === "Cancelled"
+														? "This bounty was cancelled before settlement. No further creator action is possible."
+														: currentStatus === "Funded"
+															? "The bounty is funded and within its deadline. Creator actions become available after a claim, or after expiry when an eligible refund can be made."
+															: currentStatus === "ClaimPending" && !approved
+																? "A verified claim is waiting for your approval. Review the linked GitHub evidence before approving it on-chain."
+																: currentStatus === "ClaimPending"
+																	? "The claim is approved and the review window is still open. Finalization becomes available when the window ends."
+																	: "The verified on-chain state does not currently expose an eligible creator action."}
+										</AlertDescription>
+									</Alert>
+								)}
 							</CardContent>
 						</Card>
 					</TooltipProvider>
 				)}
-				<Card>
-					<CardContent className="flex flex-col gap-3 text-sm">
-						<p className="flex items-center gap-2 font-medium">
-							<GitPullRequest className="size-4" /> How to claim
-						</p>
-						<p className="rounded-md text-muted-foreground leading-6 transition-colors hover:bg-muted/60">
-							Open a PR with{" "}
-							<button
-								className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs underline-offset-2 transition-colors hover:bg-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								onClick={() => void copyClaimTitle()}
-								type="button"
-								title="Copy PR title marker"
+				{!["Paid", "Refunded", "Cancelled"].includes(currentStatus) && (
+					<Card>
+						<CardContent className="flex flex-col gap-3 text-sm">
+							<p className="flex items-center gap-2 font-medium">
+								<GitPullRequest className="size-4" /> How to claim
+							</p>
+							<p className="rounded-md text-muted-foreground leading-6 transition-colors hover:bg-muted/60">
+								Open a PR with{" "}
+								<button
+									className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs underline-offset-2 transition-colors hover:bg-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									onClick={() => void copyClaimTitle()}
+									type="button"
+									title="Copy PR title marker"
+								>
+									[PasinPay #{bounty.issueNumber}]
+									<Copy aria-hidden="true" className="size-3" />
+								</button>{" "}
+								in the title. Once merged, PasinPay verifies the evidence.
+							</p>
+							<Button
+								size="sm"
+								render={
+									<a href={pullRequestUrl} target="_blank" rel="noreferrer" />
+								}
 							>
-								[PasinPay #{bounty.issueNumber}]
-								<Copy aria-hidden="true" className="size-3" />
-							</button>{" "}
-							in the title. Once merged, PasinPay verifies the evidence.
-						</p>
-						<Button
-							size="sm"
-							render={
-								<a href={pullRequestUrl} target="_blank" rel="noreferrer" />
-							}
-						>
-							Start a pull request <ArrowUpRight data-icon="inline-end" />
-						</Button>
-					</CardContent>
-				</Card>
+								Start a pull request <ArrowUpRight data-icon="inline-end" />
+							</Button>
+						</CardContent>
+					</Card>
+				)}
 			</aside>
 		</main>
 	);
