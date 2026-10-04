@@ -427,7 +427,7 @@ export const bountyRouter = router({
 				htmlUrl: string;
 				updatedAt: string;
 				authorLogin: string | null;
-				status: "Open" | "Closed" | "Merged" | "Verified";
+				status: "Open" | "Closed" | "Merged" | "Verified" | "Superseded";
 			}> = [];
 			if (repositoryInstallation) {
 				try {
@@ -456,7 +456,9 @@ export const bountyRouter = router({
 							status: claimByPrNumber.has(item.number)
 								? "Verified"
 								: item.merged_at
-									? "Merged"
+									? claimRows.length > 0
+										? "Superseded"
+										: "Merged"
 									: item.state === "closed"
 										? "Closed"
 										: "Open",
