@@ -30,6 +30,7 @@ import { useAccount, useConnect, useSignMessage, useSwitchChain } from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
+import { getReadableError } from "@/lib/errors";
 import { trpc } from "@/utils/trpc";
 
 export default function SettingsPage() {
@@ -120,9 +121,7 @@ export default function SettingsPage() {
 			});
 			setMessage("Wallet linked successfully.");
 		} catch (error) {
-			setMessage(
-				error instanceof Error ? error.message : "Wallet linking failed.",
-			);
+			setMessage(getReadableError(error, "Wallet linking failed."));
 		}
 	}
 
@@ -135,9 +134,7 @@ export default function SettingsPage() {
 			setUnlinkOpen(false);
 			setMessage("Wallet unlinked successfully.");
 		} catch (error) {
-			setMessage(
-				error instanceof Error ? error.message : "Wallet unlinking failed.",
-			);
+			setMessage(getReadableError(error, "Wallet unlinking failed."));
 		}
 	}
 

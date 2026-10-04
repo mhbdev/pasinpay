@@ -10,6 +10,7 @@ import {
 	useState,
 } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
+import { getReadableError } from "@/lib/errors";
 import {
 	defaultWebChainId,
 	type WebChainId,
@@ -58,10 +59,12 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 			setSwitching(true);
 			try {
 				await switchChainAsync({ chainId: nextChainId });
-			} catch {
+			} catch (cause) {
 				setChainId(previousChainId);
 				window.localStorage.setItem(storageKey, String(previousChainId));
-				setError("The wallet network switch was rejected.");
+				setError(
+					getReadableError(cause, "The wallet network switch was rejected."),
+				);
 			} finally {
 				setSwitching(false);
 			}

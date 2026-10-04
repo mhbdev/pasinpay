@@ -3,6 +3,7 @@ import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { toast } from "sonner";
+import { getReadableError } from "@/lib/errors";
 
 function isUnauthorizedError(error: unknown) {
 	if (!error || typeof error !== "object") return false;
@@ -32,7 +33,7 @@ export const queryClient = new QueryClient({
 			// OAuth session. AuthGuard handles the redirect; do not toast once per
 			// protected query during that short transition.
 			if (isUnauthorizedError(error)) return;
-			toast.error(error.message, {
+			toast.error(getReadableError(error, "Could not load this data."), {
 				action: {
 					label: "retry",
 					onClick: () => {

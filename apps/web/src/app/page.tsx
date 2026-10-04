@@ -7,14 +7,19 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@pasinpay/ui/components/card";
+import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowRight,
 	Check,
+	CircleCheck,
+	Coins,
 	GitPullRequest,
 	ShieldCheck,
+	Users,
 	WalletCards,
 } from "lucide-react";
 import Link from "next/link";
+import { trpc } from "@/utils/trpc";
 
 const steps = [
 	["01", "Fund", "Create a GitHub task and lock USDG in escrow."],
@@ -24,9 +29,28 @@ const steps = [
 ] as const;
 
 export default function Home() {
+	const { data: stats } = useQuery(
+		trpc.bounties.platformStats.queryOptions(undefined, {
+			staleTime: 60_000,
+		}),
+	);
+	const metrics = [
+		{ label: "Users", value: stats?.users ?? 0, icon: Users },
+		{ label: "Bounties created", value: stats?.bounties ?? 0, icon: Coins },
+		{
+			label: "Bounties resolved",
+			value: stats?.resolvedBounties ?? 0,
+			icon: CircleCheck,
+		},
+		{
+			label: "Active escrow",
+			value: stats?.activeBounties ?? 0,
+			icon: ShieldCheck,
+		},
+	] as const;
 	return (
 		<main className="overflow-hidden">
-			<section className="mx-auto grid max-w-6xl gap-16 px-5 pt-20 pb-24 lg:grid-cols-[1.05fr_.95fr] lg:items-center lg:pt-28">
+			<section className="mx-auto grid max-w-6xl gap-16 px-5 pt-20 pb-24 motion-safe:animate-pp-reveal lg:grid-cols-[1.05fr_.95fr] lg:items-center lg:pt-28">
 				<div className="flex flex-col gap-7">
 					<div className="flex w-fit items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-muted-foreground text-xs">
 						<span className="size-1.5 rounded-full bg-emerald-500" />{" "}
@@ -60,7 +84,7 @@ export default function Home() {
 						</span>
 					</div>
 				</div>
-				<Card className="relative">
+				<Card className="relative motion-safe:animate-pp-float">
 					<div className="absolute inset-x-0 top-0 h-1 bg-foreground" />
 					<CardHeader className="gap-5 border-b">
 						<div className="flex items-center justify-between text-muted-foreground text-xs">
@@ -115,6 +139,29 @@ export default function Home() {
 						</div>
 					</CardContent>
 				</Card>
+			</section>
+			<section
+				aria-label="PasinPay platform metrics"
+				className="border-y bg-muted/20"
+			>
+				<div className="mx-auto grid max-w-6xl gap-px px-5 py-8 sm:grid-cols-2 lg:grid-cols-4">
+					{metrics.map(({ icon: Icon, label, value }) => (
+						<div
+							className="flex items-center gap-4 border-l px-5 first:border-l-0"
+							key={label}
+						>
+							<div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+								<Icon aria-hidden="true" />
+							</div>
+							<div>
+								<p className="font-semibold text-2xl tabular-nums tracking-tight">
+									{value.toLocaleString()}
+								</p>
+								<p className="text-muted-foreground text-sm">{label}</p>
+							</div>
+						</div>
+					))}
+				</div>
 			</section>
 			<section className="border-y bg-muted/20">
 				<div className="mx-auto grid max-w-6xl gap-px px-5 py-12 sm:grid-cols-4">

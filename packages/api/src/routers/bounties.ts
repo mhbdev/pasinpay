@@ -67,6 +67,40 @@ async function authorizedInstallation(
 }
 
 export const bountyRouter = router({
+	platformStats: publicProcedure.query(async ({ ctx }) => {
+		const [usersRow, bountiesRow, paidRow, fundedRow, rewardRow] =
+			await Promise.all([
+				ctx.db.select({ total: count() }).from(user),
+				ctx.db.select({ total: count() }).from(bounty),
+				ctx.db
+					.select({ total: count() })
+					.from(bounty)
+					.where(eq(bounty.status, "Paid")),
+				ctx.db
+					.select({ total: count() })
+					.from(bounty)
+					.where(
+						or(
+							eq(bounty.status, "Funded"),
+							eq(bounty.status, "ClaimPending"),
+							eq(bounty.status, "Paid"),
+						),
+					),
+				ctx.db
+					.select({ total: sql<string>`coalesce(sum(${bounty.amount}), 0)` })
+					.from(bounty)
+					.where(eq(bounty.status, "Paid")),
+			]);
+
+		return {
+			users: Number(usersRow[0]?.total ?? 0),
+			bounties: Number(bountiesRow[0]?.total ?? 0),
+			resolvedBounties: Number(paidRow[0]?.total ?? 0),
+			activeBounties: Number(fundedRow[0]?.total ?? 0),
+			resolvedReward: String(rewardRow[0]?.total ?? "0"),
+		};
+	}),
+
 	repositories: protectedProcedure.query(async ({ ctx }) => {
 		return ctx.db
 			.select({

@@ -49,6 +49,7 @@ import {
 import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
+import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
 
@@ -310,9 +311,7 @@ export default function CreateBountyPage() {
 		} catch (cause) {
 			setStep("idle");
 			setError(
-				cause instanceof Error
-					? cause.message
-					: "The transaction could not be completed.",
+				getReadableError(cause, "The transaction could not be completed."),
 			);
 		}
 	}

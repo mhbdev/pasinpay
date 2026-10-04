@@ -14,6 +14,16 @@ import {
 	CardTitle,
 } from "@pasinpay/ui/components/card";
 import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@pasinpay/ui/components/dialog";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -24,6 +34,7 @@ import {
 	ArrowUpRight,
 	Check,
 	Clock3,
+	Copy,
 	ExternalLink,
 	GitPullRequest,
 	Share2,
@@ -41,6 +52,7 @@ import {
 } from "wagmi";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
+import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
 
@@ -53,6 +65,55 @@ const statusLabels: Record<string, string> = {
 	Refunded: "REFUNDED",
 	Cancelled: "CANCELLED",
 };
+
+function CreatorActionDialog({
+	action,
+	description,
+	busy,
+	label,
+	onConfirm,
+	variant = "outline",
+}: {
+	action: string;
+	description: string;
+	busy: string | null;
+	label: string;
+	onConfirm: () => void;
+	variant?: "default" | "outline" | "destructive";
+}) {
+	const [open, setOpen] = useState(false);
+	const pending = busy === action;
+	return (
+		<Dialog open={open} onOpenChange={setOpen}>
+			<DialogTrigger
+				render={<Button disabled={Boolean(busy)} size="sm" variant={variant} />}
+			>
+				{pending ? `${label}…` : label}
+			</DialogTrigger>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>{label}?</DialogTitle>
+					<DialogDescription>{description}</DialogDescription>
+				</DialogHeader>
+				<DialogFooter>
+					<DialogClose render={<Button variant="outline" />}>
+						Keep open
+					</DialogClose>
+					<Button
+						disabled={pending}
+						onClick={() => {
+							onConfirm();
+							setOpen(false);
+						}}
+						variant={variant === "outline" ? "default" : variant}
+					>
+						Confirm
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
 
 export default function BountyDetailPage() {
 	const params = useParams<{ id: string }>();
@@ -71,6 +132,17 @@ export default function BountyDetailPage() {
 	const queryClient = useQueryClient();
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+
+	async function copyClaimTitle() {
+		try {
+			await navigator.clipboard.writeText(
+				`[PasinPay #${bounty?.issueNumber ?? ""}]`,
+			);
+			toast.success("PR title marker copied");
+		} catch {
+			toast.error("Could not copy the PR title marker");
+		}
+	}
 
 	async function shareBounty() {
 		const url = window.location.href;
@@ -183,7 +255,12 @@ export default function BountyDetailPage() {
 				}),
 			]);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Transaction failed");
+			const message = getReadableError(
+				cause,
+				"Transaction failed. Please try again.",
+			);
+			setError(message);
+			toast.error(message);
 		} finally {
 			setBusy(null);
 		}
@@ -212,14 +289,20 @@ export default function BountyDetailPage() {
 		"PR merged",
 		"Evidence verified",
 	];
-	const completed =
-		bounty.status === "Open"
-			? 1
-			: bounty.status === "Funded"
-				? 2
-				: bounty.status === "ClaimPending"
-					? 5
-					: 5;
+	const hasOpenPullRequest = bounty.pullRequests?.some(
+		(item) => item.status === "Open",
+	);
+	const hasMergedPullRequest = bounty.pullRequests?.some((item) =>
+		Boolean(item.mergedAt),
+	);
+	const progressComplete = [
+		true,
+		bounty.status !== "Open",
+		Boolean(hasOpenPullRequest || hasMergedPullRequest),
+		Boolean(hasMergedPullRequest || bounty.claims?.length),
+		Boolean(bounty.claims?.length),
+	];
+	const completed = progressComplete.filter(Boolean).length;
 	const chain = bounty.chain;
 	const issueUrl =
 		bounty.issueUrl ||
@@ -255,7 +338,7 @@ export default function BountyDetailPage() {
 						<span>/</span>
 						<span>{bounty.repository}</span>
 					</div>
-					<div className="mt-5 flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+					<div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 						<div>
 							<h1 className="font-semibold text-4xl tracking-tight">
 								{bounty.title}
@@ -264,7 +347,7 @@ export default function BountyDetailPage() {
 								Issue #{bounty.issueNumber} · {bounty.repository}
 							</p>
 						</div>
-						<div className="rounded-full border bg-muted/40 px-3 py-1.5 font-medium text-xs">
+						<div className="w-fit shrink-0 rounded-full border bg-muted/40 px-3 py-1.5 font-medium text-xs sm:mt-1">
 							{status}
 						</div>
 					</div>
@@ -421,7 +504,7 @@ export default function BountyDetailPage() {
 								<span
 									className={`flex size-6 items-center justify-center rounded-full ${index < completed ? "bg-foreground text-background" : "border text-muted-foreground"}`}
 								>
-									{index < completed ? (
+									{progressComplete[index] ? (
 										<Check className="size-3.5" />
 									) : (
 										index + 1
@@ -429,12 +512,14 @@ export default function BountyDetailPage() {
 								</span>
 								<span
 									className={
-										index < completed ? "font-medium" : "text-muted-foreground"
+										progressComplete[index]
+											? "font-medium"
+											: "text-muted-foreground"
 									}
 								>
 									{step}
 								</span>
-								{index === completed - 1 && (
+								{index === completed && completed < steps.length && (
 									<span className="ml-auto text-muted-foreground text-xs">
 										current
 									</span>
@@ -628,57 +713,6 @@ export default function BountyDetailPage() {
 									<ArrowUpRight data-icon="inline-end" />
 								</Button>
 							)}
-						{bounty.status === "ClaimPending" && isCreator && !reviewClosed && (
-							<Button
-								variant="outline"
-								disabled={Boolean(busy)}
-								onClick={() => call("disputeClaim")}
-							>
-								{busy === "disputeClaim" ? "Opening dispute…" : "Dispute claim"}
-							</Button>
-						)}
-						{bounty.status === "ClaimPending" && reviewClosed && (
-							<Button
-								variant="outline"
-								disabled={Boolean(busy)}
-								onClick={() => call("approveClaim")}
-							>
-								{busy === "approveClaim" ? "Approving…" : "Approve claim"}
-							</Button>
-						)}
-						{bounty.status === "ClaimPending" && (
-							<Button
-								variant="outline"
-								disabled={Boolean(busy)}
-								onClick={() => call("finalizeClaim")}
-							>
-								{busy === "finalizeClaim"
-									? "Finalizing…"
-									: "Finalize after review"}
-							</Button>
-						)}
-						{bounty.status === "Open" && isCreator && (
-							<Button
-								variant="outline"
-								disabled={Boolean(busy)}
-								onClick={() => call("cancelBounty")}
-							>
-								{busy === "cancelBounty" ? "Cancelling…" : "Cancel bounty"}
-							</Button>
-						)}
-						{(bounty.status === "Funded" || bounty.status === "ClaimPending") &&
-							isExpired &&
-							isCreator && (
-								<Button
-									variant="outline"
-									disabled={Boolean(busy)}
-									onClick={() => call("refundExpired")}
-								>
-									{busy === "refundExpired"
-										? "Refunding…"
-										: "Refund expired bounty"}
-								</Button>
-							)}
 						{bounty.status === "Paid" && (
 							<Button render={<Link href={`/receipts/${bounty.id}`} />}>
 								View settlement <ExternalLink data-icon="inline-end" />
@@ -691,16 +725,94 @@ export default function BountyDetailPage() {
 						</p>
 					</CardContent>
 				</Card>
+				{isCreator && (
+					<Card>
+						<CardHeader className="gap-2 border-b">
+							<CardTitle className="text-base">Creator controls</CardTitle>
+							<p className="text-muted-foreground text-xs leading-5">
+								Manage this escrow based on its current on-chain state. Every
+								action requires wallet approval.
+							</p>
+						</CardHeader>
+						<CardContent className="flex flex-col gap-2">
+							{bounty.status === "Open" && (
+								<CreatorActionDialog
+									action="cancelBounty"
+									description="This cancels the open bounty. No escrowed funds will be paid out."
+									busy={busy}
+									label="Cancel bounty"
+									onConfirm={() => void call("cancelBounty")}
+									variant="destructive"
+								/>
+							)}
+							{(bounty.status === "Funded" ||
+								bounty.status === "ClaimPending") &&
+								isExpired && (
+									<CreatorActionDialog
+										action="refundExpired"
+										description="The deadline has passed. This refunds the escrow according to the contract rules."
+										busy={busy}
+										label="Refund expired bounty"
+										onConfirm={() => void call("refundExpired")}
+										variant="destructive"
+									/>
+								)}
+							{bounty.status === "ClaimPending" && !reviewClosed && (
+								<CreatorActionDialog
+									action="disputeClaim"
+									description="This opens a dispute and pauses automatic settlement for owner resolution."
+									busy={busy}
+									label="Dispute claim"
+									onConfirm={() => void call("disputeClaim")}
+									variant="destructive"
+								/>
+							)}
+							{bounty.status === "ClaimPending" && reviewClosed && (
+								<CreatorActionDialog
+									action="approveClaim"
+									description="Approve the verified work so it can be finalized after the review window."
+									busy={busy}
+									label="Approve claim"
+									onConfirm={() => void call("approveClaim")}
+								/>
+							)}
+							{bounty.status === "ClaimPending" && reviewClosed && (
+								<CreatorActionDialog
+									action="finalizeClaim"
+									description="Finalize the approved claim and release the reward to the attested wallet."
+									busy={busy}
+									label="Finalize after review"
+									onConfirm={() => void call("finalizeClaim")}
+								/>
+							)}
+							{bounty.status !== "Open" &&
+								bounty.status !== "ClaimPending" &&
+								bounty.status !== "Paid" &&
+								bounty.status !== "Refunded" &&
+								bounty.status !== "Cancelled" && (
+									<p className="text-muted-foreground text-xs">
+										This state is controlled by the contract owner.
+									</p>
+								)}
+						</CardContent>
+					</Card>
+				)}
 				<Card>
 					<CardContent className="flex flex-col gap-3 text-sm">
 						<p className="flex items-center gap-2 font-medium">
 							<GitPullRequest className="size-4" /> How to claim
 						</p>
-						<p className="cursor-text select-text rounded-md text-muted-foreground leading-6 transition-colors hover:bg-muted/60">
+						<p className="rounded-md text-muted-foreground leading-6 transition-colors hover:bg-muted/60">
 							Open a PR with{" "}
-							<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+							<button
+								className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs underline-offset-2 transition-colors hover:bg-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								onClick={() => void copyClaimTitle()}
+								type="button"
+								title="Copy PR title marker"
+							>
 								[PasinPay #{bounty.issueNumber}]
-							</code>{" "}
+								<Copy aria-hidden="true" data-icon="inline-end" />
+							</button>{" "}
 							in the title. Once merged, PasinPay verifies the evidence.
 						</p>
 						<Button
