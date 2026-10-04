@@ -86,7 +86,7 @@ function statusVariant(
 	status: string,
 ): "default" | "secondary" | "destructive" | "outline" {
 	if (["Paid", "Verified"].includes(status)) return "default";
-	if (["Funded", "Merged"].includes(status)) return "secondary";
+	if (["Funded", "Merged", "Superseded"].includes(status)) return "secondary";
 	if (["Disputed", "Refunded", "Cancelled", "Closed"].includes(status)) {
 		return "destructive";
 	}
@@ -856,9 +856,11 @@ export default function BountyDetailPage() {
 													? "Awaiting merge"
 													: pullRequest.status === "Merged"
 														? "Merged · verification pending"
-														: pullRequest.status === "Verified"
-															? "Verified evidence"
-															: "Closed"}
+														: pullRequest.status === "Superseded"
+															? "Merged · another PR was selected for this payout"
+															: pullRequest.status === "Verified"
+																? "Verified evidence"
+																: "Closed"}
 											</p>
 											{verifiedClaim && (
 												<div className="mt-1 flex items-center gap-1 text-muted-foreground text-xs">
