@@ -394,8 +394,15 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		args: [onchainBountyId],
 	});
 	// The database can briefly lag chain reconciliation. Never refresh or
-	// create an attestation once the escrow has moved beyond Funded.
-	if (Number(onchainBounty[11]) !== 1) return;
+	// create an attestation once the escrow has moved beyond Funded or already
+	// contains a claim. The contract remains the final authority at submission.
+	if (
+		Number(onchainBounty[11]) !== 1 ||
+		onchainBounty[9] !== "0x0000000000000000000000000000000000000000" ||
+		onchainBounty[10] !==
+			"0x0000000000000000000000000000000000000000000000000000000000000000"
+	)
+		return;
 	const mergeCommit = shaToBytes32(pr.merge_commit_sha);
 	const attestationExpiresAt = getAttestationExpiry(bountyRow.deadline);
 	const expiresAt = BigInt(Math.floor(attestationExpiresAt.getTime() / 1000));

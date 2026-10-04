@@ -118,6 +118,13 @@ export const escrowAbi = [
 	},
 	{
 		type: "function",
+		name: "attestor",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "address" }],
+	},
+	{
+		type: "function",
 		name: "calculateFee",
 		stateMutability: "view",
 		inputs: [{ name: "rewardAmount", type: "uint128" }],

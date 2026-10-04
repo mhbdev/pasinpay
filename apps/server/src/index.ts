@@ -13,6 +13,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createContext } from "./context";
 import { ENV } from "./env.server";
+import { assertAttestorMatchesContract } from "./lib/attestor";
 import { githubWebhook } from "./routes/github-webhook";
 import { auth, chainConfig, db, publicClient } from "./services";
 
@@ -61,6 +62,18 @@ app.get("/api/readiness", async (c) => {
 		await db.execute(sql`select 1`);
 		await publicClient.getChainId();
 		const token = await assertUsdGToken(publicClient, chainConfig);
+		let attestorMatchesContract = false;
+		if (
+			ENV.PASINPAY_ATTESTOR_PRIVATE_KEY &&
+			!/^0x0{40}$/i.test(ENV.PASINPAY_ESCROW_ADDRESS)
+		) {
+			try {
+				await assertAttestorMatchesContract();
+				attestorMatchesContract = true;
+			} catch {
+				attestorMatchesContract = false;
+			}
+		}
 		const configuration = {
 			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),
 			githubApp: Boolean(
@@ -71,6 +84,7 @@ app.get("/api/readiness", async (c) => {
 			),
 			escrow: !/^0x0{40}$/i.test(ENV.PASINPAY_ESCROW_ADDRESS),
 			attestor: Boolean(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY),
+			attestorMatchesContract,
 		};
 		if (
 			ENV.NODE_ENV === "production" &&

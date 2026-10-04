@@ -198,26 +198,60 @@ export default function BountyDetailPage() {
 					prNumber?: number;
 					commitHash?: string;
 				};
+				const rawCommitHash = (
+					evidence.commitHash ?? claim.mergeCommitSha
+				).replace(/^0x/i, "");
+				if (!/^[a-f0-9]{40,64}$/i.test(rawCommitHash))
+					throw new Error("The verified merge commit hash is invalid.");
 				const commitHash =
-					`0x${(evidence.commitHash ?? claim.mergeCommitSha).padStart(64, "0")}` as `0x${string}`;
+					`0x${rawCommitHash.padStart(64, "0")}` as `0x${string}`;
+				const expiresAt = BigInt(
+					Math.floor(new Date(claim.attestationExpiresAt).getTime() / 1000),
+				);
+				const now = BigInt(Math.floor(Date.now() / 1000));
+				const onchainBounty = await client.readContract({
+					address: chainConfig.escrowAddress,
+					abi: escrowAbi,
+					functionName: "bounties",
+					args: [BigInt(onchainBountyId)],
+				});
+				if (Number(onchainBounty[11]) !== 1)
+					throw new Error(
+						"This bounty is no longer funded and cannot accept a claim.",
+					);
+				if (onchainBounty[9] !== "0x0000000000000000000000000000000000000000")
+					throw new Error("This bounty already has a claim in progress.");
+				if (
+					onchainBounty[10] !==
+					"0x0000000000000000000000000000000000000000000000000000000000000000"
+				)
+					throw new Error("This bounty has already accepted a claim.");
+				if (expiresAt <= now || expiresAt > onchainBounty[4])
+					throw new Error(
+						"The claim attestation is expired or outside the bounty deadline. Refresh the bounty and try again.",
+					);
+				const claimArgs = [
+					BigInt(onchainBountyId),
+					address,
+					BigInt(evidence.prNumber ?? claim.githubPrNumber),
+					commitHash,
+					expiresAt,
+					BigInt(claim.attestationNonce),
+					claim.attestationSignature as `0x${string}`,
+				] as const;
+				await client.simulateContract({
+					address: chainConfig.escrowAddress,
+					abi: escrowAbi,
+					functionName,
+					account: address,
+					args: claimArgs,
+				});
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
 						address: chainConfig.escrowAddress,
 						abi: escrowAbi,
 						functionName,
-						args: [
-							BigInt(onchainBountyId),
-							address,
-							BigInt(evidence.prNumber ?? claim.githubPrNumber),
-							commitHash,
-							BigInt(
-								Math.floor(
-									new Date(claim.attestationExpiresAt).getTime() / 1000,
-								),
-							),
-							BigInt(claim.attestationNonce),
-							claim.attestationSignature as `0x${string}`,
-						],
+						args: claimArgs,
 						...fees,
 					}),
 				);

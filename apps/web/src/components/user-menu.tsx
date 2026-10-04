@@ -1,3 +1,14 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "@pasinpay/ui/components/alert-dialog";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Dialog,
@@ -22,6 +33,7 @@ import { Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useDisconnect } from "wagmi";
 
 import { authClient } from "@/lib/auth-client";
@@ -30,6 +42,8 @@ import { WalletMenuAction } from "./wallet-button";
 export default function UserMenu() {
 	const router = useRouter();
 	const [disconnectOpen, setDisconnectOpen] = useState(false);
+	const [signOutOpen, setSignOutOpen] = useState(false);
+	const [signingOut, setSigningOut] = useState(false);
 	const { disconnect } = useDisconnect();
 	const { data: session, isPending } = authClient.useSession();
 
@@ -72,20 +86,46 @@ export default function UserMenu() {
 							<Settings />
 							Settings
 						</DropdownMenuItem>
-						<DropdownMenuItem
-							variant="destructive"
-							onClick={() => {
-								authClient.signOut({
-									fetchOptions: {
-										onSuccess: () => {
+						<AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+							<AlertDialogTrigger
+								render={<DropdownMenuItem variant="destructive" />}
+							>
+								Sign Out
+							</AlertDialogTrigger>
+							<AlertDialogContent>
+								<AlertDialogHeader>
+									<AlertDialogTitle>Sign out?</AlertDialogTitle>
+									<AlertDialogDescription>
+										You will need to sign in again to manage bounties and linked
+										identities.
+									</AlertDialogDescription>
+								</AlertDialogHeader>
+								<AlertDialogFooter>
+									<AlertDialogCancel disabled={signingOut}>
+										Stay signed in
+									</AlertDialogCancel>
+									<AlertDialogAction
+										disabled={signingOut}
+										onClick={async () => {
+											setSigningOut(true);
+											const result = await authClient.signOut();
+											if (result.error) {
+												const message =
+													result.error.message ||
+													"Could not sign out. Please try again.";
+												toast.error(message);
+												setSigningOut(false);
+												return;
+											}
+											setSignOutOpen(false);
 											router.push("/");
-										},
-									},
-								});
-							}}
-						>
-							Sign Out
-						</DropdownMenuItem>
+										}}
+									>
+										{signingOut ? "Signing out…" : "Sign out"}
+									</AlertDialogAction>
+								</AlertDialogFooter>
+							</AlertDialogContent>
+						</AlertDialog>
 					</DropdownMenuGroup>
 				</DropdownMenuContent>
 			</DropdownMenu>

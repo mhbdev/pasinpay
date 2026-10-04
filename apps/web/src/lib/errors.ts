@@ -35,6 +35,17 @@ export function getReadableError(
 		return "Your wallet does not have enough ETH for gas. Add testnet ETH and try again.";
 	if (normalized.includes("max fee per gas less than block base fee"))
 		return "The network fee changed before signing. Refresh the fee estimate and try again.";
+	if (
+		normalized.includes("0x8baa579f") ||
+		normalized.includes("invalidsignature")
+	)
+		return "This claim attestation is not trusted by the escrow contract. The server and on-chain attestor configuration must be aligned before claiming.";
+	if (normalized.includes("0x82a49d9e") || normalized.includes("claimexpired"))
+		return "This claim attestation has expired. Refresh the bounty to request a new verification.";
+	if (normalized.includes("0xf525e320") || normalized.includes("invalidstatus"))
+		return "The bounty changed state on-chain and no longer accepts this action. Refresh the page and try again.";
+	if (normalized.includes("0x82b42900") || normalized.includes("unauthorized"))
+		return "This wallet is not authorized for the selected bounty action.";
 	if (normalized.includes("chain") && normalized.includes("network"))
 		return "Your wallet is on the wrong network. Switch networks and try again.";
 	if (
