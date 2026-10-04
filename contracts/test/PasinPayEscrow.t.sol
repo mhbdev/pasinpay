@@ -70,6 +70,25 @@ contract PasinPayEscrowTest is Test {
         escrow.fundBounty(id, uint128(AMOUNT));
     }
 
+    function testFundRejectsAfterDeadlineAndDuplicateFunding() external {
+        vm.prank(creator);
+        uint256 id = escrow.createBounty(keccak256("repo"), 1, uint64(block.timestamp + 1 days), 60);
+
+        vm.prank(creator);
+        escrow.fundBounty(id, uint128(AMOUNT));
+
+        vm.prank(creator);
+        vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
+        escrow.fundBounty(id, uint128(AMOUNT));
+
+        vm.prank(creator);
+        uint256 expiredOpenId = escrow.createBounty(keccak256("expired-repo"), 2, uint64(block.timestamp + 1 days), 60);
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(creator);
+        vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
+        escrow.fundBounty(expiredOpenId, uint128(AMOUNT));
+    }
+
     function testRejectInvalidCreateAndUnauthorizedFunding() external {
         vm.prank(creator);
         vm.expectRevert(PasinPayEscrow.InvalidInput.selector);
@@ -110,6 +129,45 @@ contract PasinPayEscrowTest is Test {
         escrow.finalizeClaim(id);
     }
 
+    function testDisputeBlocksApprovalAndOwnerCanResolvePartialClaim() external {
+        uint256 id = _createFund();
+        _submitClaim(id, claimant, 7, 1);
+
+        vm.prank(creator);
+        escrow.disputeClaim(id);
+
+        vm.prank(creator);
+        vm.expectRevert(PasinPayEscrow.Unauthorized.selector);
+        escrow.approveClaim(id);
+
+        uint256 claimantBefore = token.balanceOf(claimant);
+        uint256 creatorBefore = token.balanceOf(creator);
+        uint256 treasuryBefore = token.balanceOf(treasury);
+        vm.prank(escrow.owner());
+        escrow.resolveDispute(id, 5_000);
+
+        assertEq(token.balanceOf(claimant), claimantBefore + AMOUNT / 2);
+        assertEq(token.balanceOf(creator), creatorBefore + AMOUNT / 2);
+        assertEq(token.balanceOf(treasury), treasuryBefore + FEE_AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), 0);
+        (,,,,,,,,,,, PasinPayEscrow.Status status,) = escrow.bounties(id);
+        assertEq(uint8(status), uint8(PasinPayEscrow.Status.Paid));
+    }
+
+    function testApprovedClaimCannotBeDisputedOrRefunded() external {
+        uint256 id = _createFund();
+        _submitClaim(id, claimant, 7, 1);
+        vm.prank(creator);
+        escrow.approveClaim(id);
+
+        vm.warp(block.timestamp + 61);
+        vm.prank(creator);
+        vm.expectRevert(PasinPayEscrow.Unauthorized.selector);
+        escrow.disputeClaim(id);
+        vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
+        escrow.refundExpired(id);
+    }
+
     function testRejectWrongClaimSignatureRecipientExpiryAndReplay() external {
         uint256 id = _createFund();
         bytes memory badSignature = _signature(id, claimant, 7, 1, uint64(block.timestamp + 30 days), 0, 0xBEEF);
@@ -133,6 +191,24 @@ contract PasinPayEscrowTest is Test {
         vm.prank(claimant);
         vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
         escrow.submitClaim(id, claimant, 7, keccak256("commit"), uint64(block.timestamp + 1 hours), 0, signature);
+    }
+
+    function testOnlyTheFirstCanonicalClaimCanWin() external {
+        uint256 id = _createFund();
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        bytes memory firstSignature = _signature(id, claimant, 7, 1, expiry, ATTESTOR_PK, ATTESTOR_PK);
+        bytes memory secondSignature = _signature(id, attacker, 8, 2, expiry, ATTESTOR_PK, ATTESTOR_PK);
+
+        vm.prank(claimant);
+        escrow.submitClaim(id, claimant, 7, keccak256("commit"), expiry, 1, firstSignature);
+
+        vm.prank(attacker);
+        vm.expectRevert(PasinPayEscrow.InvalidStatus.selector);
+        escrow.submitClaim(id, attacker, 8, keccak256("commit"), expiry, 2, secondSignature);
+
+        (,,,,,,,,, address storedClaimant, bytes32 digest,,) = escrow.bounties(id);
+        assertEq(storedClaimant, claimant);
+        assertTrue(digest != bytes32(0));
     }
 
     function testRefundExpiredFundedBounty() external {

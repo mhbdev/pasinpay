@@ -27,6 +27,7 @@ import { z } from "zod";
 
 import type { Context } from "../context";
 import { protectedProcedure, publicProcedure, router } from "../index";
+import { getPullRequestStatus } from "../lib/pull-request-status";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
 
@@ -453,15 +454,12 @@ export const bountyRouter = router({
 							htmlUrl: item.html_url,
 							updatedAt: item.updated_at,
 							authorLogin: item.user?.login ?? null,
-							status: claimByPrNumber.has(item.number)
-								? "Verified"
-								: item.merged_at
-									? claimRows.length > 0
-										? "Superseded"
-										: "Merged"
-									: item.state === "closed"
-										? "Closed"
-										: "Open",
+							status: getPullRequestStatus({
+								hasCanonicalClaim: claimRows.length > 0,
+								hasClaimForPullRequest: claimByPrNumber.has(item.number),
+								mergedAt: item.merged_at,
+								state: item.state,
+							}),
 						}));
 				} catch {
 					// A public bounty page must remain available if GitHub is

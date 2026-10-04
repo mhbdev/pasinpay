@@ -68,6 +68,12 @@ import {
 import { CopyAddress } from "@/components/copy-address";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
+import {
+	getBountyProgress,
+	getCreatorActionAvailability,
+	getPullRequestDescription,
+	isClaimButtonVisible,
+} from "@/lib/bounty-ui-state";
 import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
@@ -474,18 +480,12 @@ export default function BountyDetailPage() {
 	const hasMergedPullRequest = bounty.pullRequests?.some((item) =>
 		Boolean(item.mergedAt),
 	);
-	const progressComplete = [
-		true,
-		currentStatus !== "Open",
-		Boolean(hasOpenPullRequest || hasMergedPullRequest),
-		Boolean(
-			hasMergedPullRequest ||
-				bounty.claims?.length ||
-				currentStatus === "ClaimPending" ||
-				currentStatus === "Paid",
-		),
-		Boolean(bounty.claims?.length),
-	];
+	const progressComplete = getBountyProgress({
+		currentStatus,
+		hasClaim: Boolean(bounty.claims?.length),
+		hasMergedPullRequest: Boolean(hasMergedPullRequest),
+		hasOpenPullRequest: Boolean(hasOpenPullRequest),
+	});
 	const completed = progressComplete.filter(Boolean).length;
 	const chain = bounty.chain;
 	const issueUrl =
@@ -521,24 +521,28 @@ export default function BountyDetailPage() {
 	const approved = optimisticApproved ?? Boolean(onchainBounty?.[12]);
 	const isOnchainClaimantSet =
 		Boolean(onchainBounty?.[9]) && onchainBounty?.[9] !== ZERO_ADDRESS;
-	const canCancel = isCreator && currentStatus === "Open";
-	const canRefund =
-		isCreator &&
-		(currentStatus === "Funded" || currentStatus === "ClaimPending") &&
-		isExpired &&
-		!approved;
-	const canDispute =
-		isCreator && currentStatus === "ClaimPending" && !reviewClosed;
-	const canApprove = isCreator && currentStatus === "ClaimPending" && !approved;
-	const canFinalize =
-		isCreator && currentStatus === "ClaimPending" && approved && reviewClosed;
-	const hasCreatorAction =
-		canCancel || canRefund || canDispute || canApprove || canFinalize;
+	const {
+		canCancel,
+		canRefund,
+		canDispute,
+		canApprove,
+		canFinalize,
+		hasCreatorAction,
+	} = getCreatorActionAvailability({
+		currentStatus,
+		isCreator,
+		isExpired,
+		reviewClosed,
+		approved,
+	});
 	const reviewEndsLabel = reviewEndsAt
 		? new Date(reviewEndsAt).toLocaleString()
 		: "the review window ends";
-	const claimButtonVisible =
-		currentStatus === "Funded" && !isOnchainClaimantSet && Boolean(claim);
+	const claimButtonVisible = isClaimButtonVisible({
+		currentStatus,
+		hasOnchainClaimant: isOnchainClaimantSet,
+		hasClaimAttestation: Boolean(claim),
+	});
 	const transactionLabel = transaction
 		? transaction.phase === "confirming"
 			? "Waiting for on-chain confirmation…"
@@ -852,15 +856,7 @@ export default function BountyDetailPage() {
 													? `@${pullRequest.authorLogin}`
 													: "Unknown contributor"}
 												{" · "}
-												{pullRequest.status === "Open"
-													? "Awaiting merge"
-													: pullRequest.status === "Merged"
-														? "Merged · verification pending"
-														: pullRequest.status === "Superseded"
-															? "Merged · another PR was selected for this payout"
-															: pullRequest.status === "Verified"
-																? "Verified evidence"
-																: "Closed"}
+												{getPullRequestDescription(pullRequest.status)}
 											</p>
 											{verifiedClaim && (
 												<div className="mt-1 flex items-center gap-1 text-muted-foreground text-xs">
