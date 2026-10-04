@@ -2,6 +2,11 @@
 
 import { escrowAbi } from "@pasinpay/chain";
 import {
+	Alert,
+	AlertDescription,
+	AlertTitle,
+} from "@pasinpay/ui/components/alert";
+import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
@@ -29,6 +34,13 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@pasinpay/ui/components/dropdown-menu";
+import { Spinner } from "@pasinpay/ui/components/spinner";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@pasinpay/ui/components/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowUpRight,
@@ -37,6 +49,7 @@ import {
 	Copy,
 	ExternalLink,
 	GitPullRequest,
+	Info,
 	Share2,
 	ShieldCheck,
 } from "lucide-react";
@@ -47,6 +60,7 @@ import { toast } from "sonner";
 import {
 	useAccount,
 	usePublicClient,
+	useReadContract,
 	useSwitchChain,
 	useWriteContract,
 } from "wagmi";
@@ -67,52 +81,117 @@ const statusLabels: Record<string, string> = {
 	Cancelled: "CANCELLED",
 };
 
+const onchainStatusLabels = [
+	"Open",
+	"Funded",
+	"ClaimPending",
+	"Paid",
+	"Disputed",
+	"Refunded",
+	"Cancelled",
+] as const;
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+type BountyAction =
+	| "submitClaim"
+	| "approveClaim"
+	| "finalizeClaim"
+	| "disputeClaim"
+	| "refundExpired"
+	| "cancelBounty";
+
+type TransactionState = {
+	action: BountyAction;
+	hash: `0x${string}`;
+	phase: "confirming" | "confirmed" | "failed";
+};
+
+const actionStatus: Record<BountyAction, string> = {
+	submitClaim: "ClaimPending",
+	approveClaim: "ClaimPending",
+	finalizeClaim: "Paid",
+	disputeClaim: "Disputed",
+	refundExpired: "Refunded",
+	cancelBounty: "Cancelled",
+};
+
 function CreatorActionDialog({
 	action,
 	description,
 	busy,
+	details,
 	label,
 	onConfirm,
+	summary,
 	variant = "outline",
 }: {
 	action: string;
 	description: string;
 	busy: string | null;
+	details: string;
 	label: string;
 	onConfirm: () => void;
+	summary: string;
 	variant?: "default" | "outline" | "destructive";
 }) {
 	const [open, setOpen] = useState(false);
 	const pending = busy === action;
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger
-				render={<Button disabled={Boolean(busy)} size="sm" variant={variant} />}
-			>
-				{pending ? `${label}…` : label}
-			</DialogTrigger>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>{label}?</DialogTitle>
-					<DialogDescription>{description}</DialogDescription>
-				</DialogHeader>
-				<DialogFooter>
-					<DialogClose render={<Button variant="outline" />}>
-						Keep open
-					</DialogClose>
-					<Button
-						disabled={pending}
-						onClick={() => {
-							onConfirm();
-							setOpen(false);
-						}}
-						variant={variant === "outline" ? "default" : variant}
-					>
-						Confirm
-					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+		<div className="flex items-start justify-between gap-3 rounded-md border p-3">
+			<div className="min-w-0 flex-1">
+				<div className="flex items-center gap-2">
+					<p className="font-medium text-sm">{label}</p>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									aria-label={`About ${label}`}
+									size="icon"
+									variant="ghost"
+								/>
+							}
+						>
+							<Info data-icon="inline-start" />
+						</TooltipTrigger>
+						<TooltipContent>{details}</TooltipContent>
+					</Tooltip>
+				</div>
+				<p className="mt-1 text-muted-foreground text-xs leading-5">
+					{summary}
+				</p>
+			</div>
+			<Dialog open={open} onOpenChange={setOpen}>
+				<DialogTrigger
+					render={
+						<Button disabled={Boolean(busy)} size="sm" variant={variant} />
+					}
+				>
+					{pending ? `${label}…` : label}
+				</DialogTrigger>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>{label}?</DialogTitle>
+						<DialogDescription>{description}</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<DialogClose render={<Button variant="outline" />}>
+							Keep open
+						</DialogClose>
+						<Button
+							disabled={pending}
+							onClick={() => {
+								onConfirm();
+								setOpen(false);
+							}}
+							variant={variant === "outline" ? "default" : variant}
+						>
+							Confirm
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</div>
 	);
 }
 
@@ -133,6 +212,28 @@ export default function BountyDetailPage() {
 	const queryClient = useQueryClient();
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
+	const [optimisticApproved, setOptimisticApproved] = useState<boolean | null>(
+		null,
+	);
+	const [transaction, setTransaction] = useState<TransactionState | null>(null);
+	const onchainBountyId = bounty?.onchainBountyId
+		? BigInt(bounty.onchainBountyId)
+		: undefined;
+	const { data: onchainBounty, refetch: refetchOnchainBounty } =
+		useReadContract({
+			address: chainConfig.escrowAddress,
+			abi: escrowAbi,
+			functionName: "bounties",
+			args: onchainBountyId === undefined ? undefined : [onchainBountyId],
+			chainId: chainConfig.id,
+			query: {
+				enabled:
+					onchainBountyId !== undefined &&
+					chainConfig.escrowAddress !== ZERO_ADDRESS,
+				refetchInterval: 10_000,
+			},
+		});
 
 	async function copyClaimTitle() {
 		try {
@@ -163,20 +264,13 @@ export default function BountyDetailPage() {
 		}
 	}
 
-	async function call(
-		functionName:
-			| "submitClaim"
-			| "approveClaim"
-			| "finalizeClaim"
-			| "disputeClaim"
-			| "refundExpired"
-			| "cancelBounty",
-	) {
+	async function call(functionName: BountyAction) {
 		if (!bounty?.onchainBountyId || !client || !address)
 			return setError("Connect the wallet used for this bounty first.");
 		const onchainBountyId = bounty.onchainBountyId;
 		setBusy(functionName);
 		setError(null);
+		setTransaction(null);
 		try {
 			if (chainId !== chainConfig.id)
 				await switchChainAsync({ chainId: chainConfig.id });
@@ -255,7 +349,16 @@ export default function BountyDetailPage() {
 						...fees,
 					}),
 				);
-				await client.waitForTransactionReceipt({ hash });
+				setTransaction({ action: functionName, hash, phase: "confirming" });
+				const receipt = await client.waitForTransactionReceipt({ hash });
+				if (receipt.status !== "success") {
+					setTransaction({ action: functionName, hash, phase: "failed" });
+					throw new Error(
+						"The transaction was mined but reverted. No bounty state was changed.",
+					);
+				}
+				setTransaction({ action: functionName, hash, phase: "confirmed" });
+				setOptimisticStatus(actionStatus[functionName]);
 			} else if (functionName === "refundExpired") {
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
@@ -266,7 +369,16 @@ export default function BountyDetailPage() {
 						...fees,
 					}),
 				);
-				await client.waitForTransactionReceipt({ hash });
+				setTransaction({ action: functionName, hash, phase: "confirming" });
+				const receipt = await client.waitForTransactionReceipt({ hash });
+				if (receipt.status !== "success") {
+					setTransaction({ action: functionName, hash, phase: "failed" });
+					throw new Error(
+						"The transaction was mined but reverted. No bounty state was changed.",
+					);
+				}
+				setTransaction({ action: functionName, hash, phase: "confirmed" });
+				setOptimisticStatus(actionStatus[functionName]);
 			} else {
 				if (bounty.creatorWallet.toLowerCase() !== address.toLowerCase())
 					throw new Error("Only the bounty creator can manage this bounty.");
@@ -279,16 +391,32 @@ export default function BountyDetailPage() {
 						...fees,
 					}),
 				);
-				await client.waitForTransactionReceipt({ hash });
+				setTransaction({ action: functionName, hash, phase: "confirming" });
+				const receipt = await client.waitForTransactionReceipt({ hash });
+				if (receipt.status !== "success") {
+					setTransaction({ action: functionName, hash, phase: "failed" });
+					throw new Error(
+						"The transaction was mined but reverted. No bounty state was changed.",
+					);
+				}
+				setTransaction({ action: functionName, hash, phase: "confirmed" });
+				setOptimisticStatus(actionStatus[functionName]);
+				if (functionName === "approveClaim") setOptimisticApproved(true);
 			}
 			await Promise.all([
-				queryClient.invalidateQueries({
+				queryClient.refetchQueries({
 					queryKey: trpc.bounties.getById.queryKey({ id }),
 				}),
-				queryClient.invalidateQueries({
+				queryClient.refetchQueries({
 					queryKey: trpc.bounties.claim.queryKey({ bountyId: id }),
 				}),
+				refetchOnchainBounty(),
 			]);
+			toast.success(
+				functionName === "submitClaim"
+					? "Claim submitted. The bounty is now awaiting creator review."
+					: `${functionName === "approveClaim" ? "Claim approved" : functionName === "finalizeClaim" ? "Reward released" : functionName === "disputeClaim" ? "Claim disputed" : functionName === "refundExpired" ? "Bounty refunded" : "Bounty cancelled"}. Transaction confirmed on-chain.`,
+			);
 		} catch (cause) {
 			const message = getReadableError(
 				cause,
@@ -316,7 +444,11 @@ export default function BountyDetailPage() {
 				</Link>
 			</main>
 		);
-	const status = statusLabels[bounty.status] ?? bounty.status.toUpperCase();
+	const onchainStatus = onchainBounty
+		? (onchainStatusLabels[Number(onchainBounty[11])] ?? null)
+		: null;
+	const currentStatus = optimisticStatus ?? onchainStatus ?? bounty.status;
+	const status = statusLabels[currentStatus] ?? currentStatus.toUpperCase();
 	const steps = [
 		"Bounty created",
 		"USDG funded",
@@ -332,9 +464,14 @@ export default function BountyDetailPage() {
 	);
 	const progressComplete = [
 		true,
-		bounty.status !== "Open",
+		currentStatus !== "Open",
 		Boolean(hasOpenPullRequest || hasMergedPullRequest),
-		Boolean(hasMergedPullRequest || bounty.claims?.length),
+		Boolean(
+			hasMergedPullRequest ||
+				bounty.claims?.length ||
+				currentStatus === "ClaimPending" ||
+				currentStatus === "Paid",
+		),
 		Boolean(bounty.claims?.length),
 	];
 	const completed = progressComplete.filter(Boolean).length;
@@ -347,19 +484,53 @@ export default function BountyDetailPage() {
 		Boolean(address) &&
 		address?.toLowerCase() === bounty.creatorWallet.toLowerCase();
 	const isExpired = new Date(bounty.deadline).getTime() <= Date.now();
-	const reviewClosed =
-		Boolean(bounty.reviewEnds) &&
-		new Date(bounty.reviewEnds ?? 0).getTime() <= Date.now();
+	const reviewEndsAt = onchainBounty?.[6]
+		? Number(onchainBounty[6]) * 1000
+		: bounty.reviewEnds
+			? new Date(bounty.reviewEnds).getTime()
+			: null;
+	const reviewClosed = reviewEndsAt !== null && reviewEndsAt <= Date.now();
+	const approved = optimisticApproved ?? Boolean(onchainBounty?.[12]);
+	const isOnchainClaimantSet =
+		Boolean(onchainBounty?.[9]) && onchainBounty?.[9] !== ZERO_ADDRESS;
+	const canCancel = isCreator && currentStatus === "Open";
+	const canRefund =
+		isCreator &&
+		(currentStatus === "Funded" || currentStatus === "ClaimPending") &&
+		isExpired &&
+		!approved;
+	const canDispute =
+		isCreator && currentStatus === "ClaimPending" && !reviewClosed;
+	const canApprove = isCreator && currentStatus === "ClaimPending" && !approved;
+	const canFinalize =
+		isCreator && currentStatus === "ClaimPending" && approved && reviewClosed;
 	const hasCreatorAction =
-		bounty.status === "Open" ||
-		bounty.status === "ClaimPending" ||
-		((bounty.status === "Funded" || bounty.status === "ClaimPending") &&
-			isExpired);
+		canCancel || canRefund || canDispute || canApprove || canFinalize;
+	const reviewEndsLabel = reviewEndsAt
+		? new Date(reviewEndsAt).toLocaleString()
+		: "the review window ends";
+	const claimButtonVisible =
+		currentStatus === "Funded" && !isOnchainClaimantSet && Boolean(claim);
+	const transactionLabel = transaction
+		? transaction.phase === "confirming"
+			? "Waiting for on-chain confirmation…"
+			: transaction.phase === "confirmed"
+				? "Transaction confirmed on-chain"
+				: "Transaction reverted on-chain"
+		: null;
+	const transactionExplorerUrl = transaction?.hash
+		? `${chainConfig.explorerUrl}/tx/${transaction.hash}`
+		: null;
+	/*
+	 * The server's indexed status may lag the receipt by a few seconds. The
+	 * contract read and the optimistic post-receipt status keep the action bar
+	 * truthful during that short indexing window.
+	 */
 	const pullRequestUrl =
 		"https://github.com/" +
 		bounty.repository +
 		"/compare?expand=1&title=" +
-		encodeURIComponent("[PasinPay #" + bounty.issueNumber + "] ") +
+		encodeURIComponent(`[PasinPay #${bounty.issueNumber}] `) +
 		"&body=" +
 		encodeURIComponent(
 			"Closes #" +
@@ -485,7 +656,7 @@ export default function BountyDetailPage() {
 							</p>
 							<CopyAddress
 								address={bounty.creator.wallet}
-								href={chain?.explorerUrl + "/address/" + bounty.creator.wallet}
+								href={`${chain?.explorerUrl}/address/${bounty.creator.wallet}`}
 								label="Creator wallet"
 							/>
 						</div>
@@ -632,7 +803,7 @@ export default function BountyDetailPage() {
 											</div>
 											<p className="mt-1 text-muted-foreground text-xs">
 												{pullRequest.authorLogin
-													? "@" + pullRequest.authorLogin
+													? `@${pullRequest.authorLogin}`
 													: "Unknown contributor"}
 												{" · "}
 												{pullRequest.status === "Open"
@@ -744,100 +915,153 @@ export default function BountyDetailPage() {
 						</p>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
-						{(bounty.status === "Funded" || bounty.status === "ClaimPending") &&
-							claim && (
-								<Button
-									disabled={Boolean(busy)}
-									onClick={() => call("submitClaim")}
-								>
-									{busy === "submitClaim" ? "Submitting…" : "Claim USDG"}
-									<ArrowUpRight data-icon="inline-end" />
-								</Button>
-							)}
-						{bounty.status === "Paid" && (
+						{claimButtonVisible && (
+							<Button
+								disabled={Boolean(busy)}
+								onClick={() => call("submitClaim")}
+							>
+								{busy === "submitClaim" ? "Submitting…" : "Claim USDG"}
+								<ArrowUpRight data-icon="inline-end" />
+							</Button>
+						)}
+						{currentStatus === "ClaimPending" && !transaction && (
+							<Alert>
+								<AlertTitle>Claim submitted</AlertTitle>
+								<AlertDescription>
+									The claim is recorded on-chain and is waiting for creator
+									review. The reward is not released until the claim is approved
+									and the review window has ended.
+								</AlertDescription>
+							</Alert>
+						)}
+						{currentStatus === "Paid" && (
 							<Button render={<Link href={`/receipts/${bounty.id}`} />}>
 								View settlement <ExternalLink data-icon="inline-end" />
 							</Button>
 						)}
+						{transaction && transactionLabel && (
+							<Alert
+								variant={
+									transaction.phase === "failed" ? "destructive" : "default"
+								}
+							>
+								{transaction.phase === "confirming" && <Spinner />}
+								<AlertTitle>{transactionLabel}</AlertTitle>
+								<AlertDescription>
+									{transaction.phase === "confirming"
+										? "Keep this page open while the network confirms the transaction. The action will not be treated as complete until a successful receipt is returned."
+										: transaction.phase === "confirmed"
+											? "The frontend has verified a successful receipt and refreshed the on-chain and server-backed state."
+											: "The network rejected this transaction. No state transition was applied; you can review the error and try again."}
+									{transactionExplorerUrl && (
+										<a
+											className="mt-1 block underline underline-offset-2"
+											href={transactionExplorerUrl}
+											target="_blank"
+											rel="noreferrer"
+										>
+											View transaction on the block explorer
+										</a>
+									)}
+								</AlertDescription>
+							</Alert>
+						)}
 						{error && <p className="text-destructive text-sm">{error}</p>}
-						<p className="flex items-center gap-2 text-muted-foreground text-xs">
-							<Clock3 className="size-3.5" /> Creator approval and review
-							required
-						</p>
+						{currentStatus === "ClaimPending" && (
+							<p className="flex items-center gap-2 text-muted-foreground text-xs">
+								<Clock3 data-icon="inline-start" /> Creator approval and review
+								required
+							</p>
+						)}
 					</CardContent>
 				</Card>
 				{isCreator && (
-					<Card>
-						<CardHeader className="gap-2 border-b">
-							<CardTitle className="text-base">Creator controls</CardTitle>
-							<p className="text-muted-foreground text-xs leading-5">
-								Manage this escrow based on its current on-chain state. Every
-								action requires wallet approval.
-							</p>
-						</CardHeader>
-						<CardContent className="flex flex-col gap-2">
-							{bounty.status === "Open" && (
-								<CreatorActionDialog
-									action="cancelBounty"
-									description="This cancels the open bounty. No escrowed funds will be paid out."
-									busy={busy}
-									label="Cancel bounty"
-									onConfirm={() => void call("cancelBounty")}
-									variant="destructive"
-								/>
-							)}
-							{(bounty.status === "Funded" ||
-								bounty.status === "ClaimPending") &&
-								isExpired && (
+					<TooltipProvider delay={200}>
+						<Card>
+							<CardHeader className="gap-2 border-b">
+								<CardTitle className="text-base">Creator controls</CardTitle>
+								<p className="text-muted-foreground text-xs leading-5">
+									Manage this escrow based on the verified on-chain state. Each
+									action opens your wallet for approval and only changes the
+									bounty after a successful receipt.
+								</p>
+							</CardHeader>
+							<CardContent className="flex flex-col gap-3">
+								{canCancel && (
+									<CreatorActionDialog
+										action="cancelBounty"
+										details="Cancels an open bounty before it is funded. Because no funds are held in escrow yet, there is no contributor payout or refund transaction."
+										summary="Close this bounty before funding. This cannot be undone."
+										description="This permanently cancels the open bounty. No escrowed funds will be paid out, and contributors will no longer be able to use this bounty."
+										busy={busy}
+										label="Cancel bounty"
+										onConfirm={() => void call("cancelBounty")}
+										variant="destructive"
+									/>
+								)}
+								{canRefund && (
 									<CreatorActionDialog
 										action="refundExpired"
-										description="The deadline has passed. This refunds the escrow according to the contract rules."
+										details="Returns the full funded amount, including the platform fee, to the creator after the deadline when no approved claim can be finalized."
+										summary="Recover the escrow after the bounty deadline has passed."
+										description="The deadline has passed. This refunds the total escrowed amount to the creator. It is unavailable once a claim has been approved."
 										busy={busy}
 										label="Refund expired bounty"
 										onConfirm={() => void call("refundExpired")}
 										variant="destructive"
 									/>
 								)}
-							{bounty.status === "ClaimPending" && !reviewClosed && (
-								<CreatorActionDialog
-									action="disputeClaim"
-									description="This opens a dispute and pauses automatic settlement for owner resolution."
-									busy={busy}
-									label="Dispute claim"
-									onConfirm={() => void call("disputeClaim")}
-									variant="destructive"
-								/>
-							)}
-							{bounty.status === "ClaimPending" && reviewClosed && (
-								<CreatorActionDialog
-									action="approveClaim"
-									description="Approve the verified work so it can be finalized after the review window."
-									busy={busy}
-									label="Approve claim"
-									onConfirm={() => void call("approveClaim")}
-								/>
-							)}
-							{bounty.status === "ClaimPending" && reviewClosed && (
-								<CreatorActionDialog
-									action="finalizeClaim"
-									description="Finalize the approved claim and release the reward to the attested wallet."
-									busy={busy}
-									label="Finalize after review"
-									onConfirm={() => void call("finalizeClaim")}
-								/>
-							)}
-							{!hasCreatorAction &&
-								bounty.status !== "Paid" &&
-								bounty.status !== "Refunded" &&
-								bounty.status !== "Cancelled" && (
-									<p className="text-muted-foreground text-xs">
-										No creator action is available while this bounty is funded
-										and within its deadline. Review actions appear after a
-										verified claim; refund becomes available after the deadline.
-									</p>
+								{canDispute && (
+									<CreatorActionDialog
+										action="disputeClaim"
+										details="Moves the claim into dispute and prevents the normal approval/finalization path. Resolution is an owner-only escrow operation."
+										summary="Pause settlement if the submitted work needs an owner dispute."
+										description="This opens a dispute for the pending claim before the review window closes. The normal reward release path pauses until the escrow owner resolves the dispute."
+										busy={busy}
+										label="Dispute claim"
+										onConfirm={() => void call("disputeClaim")}
+										variant="destructive"
+									/>
 								)}
-						</CardContent>
-					</Card>
+								{canApprove && (
+									<CreatorActionDialog
+										action="approveClaim"
+										details="Records your approval on-chain. It does not pay the contributor immediately; finalization remains blocked until the review window has ended."
+										summary={`Confirm the verified work. The review window ends ${reviewEndsLabel}.`}
+										description={`Approve the verified claim for this bounty. This records creator approval on-chain, but the reward remains in escrow until the review window ends at ${reviewEndsLabel}.`}
+										busy={busy}
+										label="Approve claim"
+										onConfirm={() => void call("approveClaim")}
+									/>
+								)}
+								{canFinalize && (
+									<CreatorActionDialog
+										action="finalizeClaim"
+										details="Releases the advertised reward to the attested claimant wallet and sends the platform fee to the configured treasury. This is irreversible."
+										summary="Release the reward after approval and the review window."
+										description="Finalize the approved claim after the review window has ended. The escrow transfers the advertised reward to the attested contributor and routes the platform fee to the treasury. This cannot be reversed."
+										busy={busy}
+										label="Finalize after review"
+										onConfirm={() => void call("finalizeClaim")}
+									/>
+								)}
+								{!hasCreatorAction &&
+									!["Paid", "Refunded", "Cancelled"].includes(
+										currentStatus,
+									) && (
+										<p className="text-muted-foreground text-xs">
+											{currentStatus === "Funded"
+												? "No creator action is available while this bounty is funded and within its deadline."
+												: currentStatus === "ClaimPending" && !approved
+													? "The claim is waiting for creator approval."
+													: currentStatus === "ClaimPending"
+														? "The claim is approved and waiting for the review window to end before finalization."
+														: "No creator action is available for this on-chain state."}
+										</p>
+									)}
+							</CardContent>
+						</Card>
+					</TooltipProvider>
 				)}
 				<Card>
 					<CardContent className="flex flex-col gap-3 text-sm">
