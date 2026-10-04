@@ -5,14 +5,20 @@ import {
 	bounty,
 	chainCursor,
 	claim,
+	githubInstallation,
 	job as jobTable,
+	repository,
 	settlement,
 	walletLink,
 } from "@pasinpay/db/schema/index";
 import { and, eq, isNull, lt } from "drizzle-orm";
 import type { Hex } from "viem";
 import { signClaim } from "./lib/attestor";
-import { createInstallationToken, githubRequest } from "./lib/github";
+import {
+	createInstallationToken,
+	githubRequest,
+	listRepositoryPullRequests,
+} from "./lib/github";
 import { chainConfig, db, publicClient } from "./services";
 
 type PullRequestPayload = {
@@ -443,6 +449,79 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 	});
 }
 
+async function reconcileGitHubClaims() {
+	const fundedBounties = await db
+		.select({
+			bounty,
+			installationId: githubInstallation.installationId,
+		})
+		.from(bounty)
+		.innerJoin(repository, eq(repository.fullName, bounty.repository))
+		.innerJoin(
+			githubInstallation,
+			eq(githubInstallation.id, repository.installationId),
+		)
+		.where(
+			and(eq(bounty.chainId, chainConfig.id), eq(bounty.status, "Funded")),
+		);
+
+	for (const row of fundedBounties) {
+		if (row.bounty.onchainBountyId === null) continue;
+		const pullRequests = await listRepositoryPullRequests(
+			row.installationId,
+			row.bounty.repository,
+		);
+		const marker = new RegExp(
+			`\\[PasinPay\\s+#${row.bounty.issueNumber}\\]`,
+			"i",
+		);
+		const mergedPullRequest = pullRequests.find(
+			(pullRequest) =>
+				pullRequest.state === "closed" &&
+				Boolean(pullRequest.merged_at) &&
+				Boolean(pullRequest.merge_commit_sha) &&
+				marker.test(pullRequest.title),
+		);
+		if (!mergedPullRequest || !mergedPullRequest.user) continue;
+
+		const installationId = Number(row.installationId);
+		if (!Number.isSafeInteger(installationId)) {
+			throw new Error(
+				`Invalid GitHub installation id for ${row.bounty.repository}`,
+			);
+		}
+		await processGitHubJob({
+			id: `reconcile-${row.bounty.id}-${mergedPullRequest.number}`,
+			kind: "github.pull_request.closed",
+			payload: {
+				deliveryId: `reconcile:${mergedPullRequest.number}:${mergedPullRequest.merge_commit_sha}`,
+				event: "pull_request",
+				payload: {
+					installation: { id: installationId },
+					repository: { full_name: row.bounty.repository },
+					pull_request: {
+						merged: true,
+						merged_at: mergedPullRequest.merged_at,
+						merge_commit_sha: mergedPullRequest.merge_commit_sha,
+						number: mergedPullRequest.number,
+						title: mergedPullRequest.title,
+						html_url: mergedPullRequest.html_url,
+						user: mergedPullRequest.user,
+					},
+				},
+			},
+			// Reconciliation jobs are synthetic and do not need persisted retry
+			// metadata; processGitHubJob only consumes their payload.
+			attempts: 1,
+			availableAt: new Date(),
+			lockedAt: new Date(),
+			lastError: null,
+			status: "running",
+			createdAt: new Date(),
+		} as typeof jobTable.$inferSelect);
+	}
+}
+
 async function processJob(job: typeof jobTable.$inferSelect) {
 	if (job.kind === "github.pull_request.closed") return processGitHubJob(job);
 	if (job.kind === "chain.sync") return;
@@ -450,12 +529,23 @@ async function processJob(job: typeof jobTable.$inferSelect) {
 
 export async function runWorker() {
 	let lastSync = 0;
+	let lastGitHubReconciliation = 0;
 	for (;;) {
 		if (Date.now() - lastSync > 10_000) {
 			lastSync = Date.now();
 			try {
 				await syncChainEvents();
-			} catch {}
+			} catch (error) {
+				console.error("chain reconciliation failed", error);
+			}
+		}
+		if (Date.now() - lastGitHubReconciliation > 30_000) {
+			lastGitHubReconciliation = Date.now();
+			try {
+				await reconcileGitHubClaims();
+			} catch (error) {
+				console.error("github reconciliation failed", error);
+			}
 		}
 		const staleLock = new Date(Date.now() - 5 * 60_000);
 		await db
