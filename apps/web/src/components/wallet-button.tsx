@@ -89,11 +89,13 @@ export function WalletButton() {
 	);
 }
 
-export function WalletMenuAction() {
-	const [disconnectOpen, setDisconnectOpen] = useState(false);
+export function WalletMenuAction({
+	onDisconnectRequest,
+}: {
+	onDisconnectRequest: () => void;
+}) {
 	const { address, chainId, isConnected } = useAccount();
 	const { connect, connectors, isPending } = useConnect();
-	const { disconnect } = useDisconnect();
 	const { switchChain } = useSwitchChain();
 	const { chainConfig } = useAppNetwork();
 	const connector = connectors[0];
@@ -124,43 +126,13 @@ export function WalletMenuAction() {
 	}
 
 	return (
-		<Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-			<DropdownMenuItem
-				onClick={(event) => {
-					event.preventDefault();
-					setDisconnectOpen(true);
-				}}
-			>
-				<Wallet />
-				<span>Wallet</span>
-				<span className="ml-auto font-mono text-muted-foreground text-xs">
-					{shortAddress(address)}
-				</span>
-			</DropdownMenuItem>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>Disconnect wallet?</DialogTitle>
-					<DialogDescription>
-						Your wallet will be disconnected from this browser session. Your
-						PasinPay account link remains unchanged.
-					</DialogDescription>
-				</DialogHeader>
-				<DialogFooter>
-					<DialogClose render={<Button variant="outline" />}>
-						Keep connected
-					</DialogClose>
-					<Button
-						variant="destructive"
-						onClick={() => {
-							disconnect();
-							setDisconnectOpen(false);
-						}}
-					>
-						Disconnect wallet
-					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+		<DropdownMenuItem onClick={onDisconnectRequest}>
+			<Wallet />
+			<span>Wallet</span>
+			<span className="ml-auto font-mono text-muted-foreground text-xs">
+				{shortAddress(address)}
+			</span>
+		</DropdownMenuItem>
 	);
 }
 
