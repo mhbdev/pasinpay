@@ -125,13 +125,18 @@ export function WalletMenuAction() {
 
 	return (
 		<Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-			<DialogTrigger render={<DropdownMenuItem />}>
+			<DropdownMenuItem
+				onClick={(event) => {
+					event.preventDefault();
+					setDisconnectOpen(true);
+				}}
+			>
 				<Wallet />
 				<span>Wallet</span>
 				<span className="ml-auto font-mono text-muted-foreground text-xs">
 					{shortAddress(address)}
 				</span>
-			</DialogTrigger>
+			</DropdownMenuItem>
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Disconnect wallet?</DialogTitle>
