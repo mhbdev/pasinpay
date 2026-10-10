@@ -3,8 +3,12 @@
 	"private": true,
 	"type": "module",
 	"dependencies": {
+		"@better-auth/cimd": "1.7.5",
+		"@better-auth/mcp": "1.7.5",
 		"@hono/trpc-server": "^0.4.2",
+		"@modelcontextprotocol/server": "^2",
 		"@trpc/server": "^11.18.0",
+		"@x402/core": "^2.28.0",
 		"better-auth": "1.7.5",
 		"drizzle-orm": "1.0.0-rc.4",
 		"evlog": "^2.28.1",
