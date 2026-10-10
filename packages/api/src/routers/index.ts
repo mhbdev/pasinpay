@@ -1,4 +1,5 @@
 import { protectedProcedure, publicProcedure, router } from "../index";
+import { apiKeyRouter } from "./api-keys";
 import { bountyRouter } from "./bounties";
 
 export const appRouter = router({
@@ -12,5 +13,6 @@ export const appRouter = router({
 		};
 	}),
 	bounties: bountyRouter,
+	apiKeys: apiKeyRouter,
 });
 export type AppRouter = typeof appRouter;

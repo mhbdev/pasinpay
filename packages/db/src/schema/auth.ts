@@ -306,6 +306,28 @@ export const mcpAuditLog = pgTable(
 	],
 );
 
+export const apiKeyCredential = pgTable(
+	"api_key_credential",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		keyPrefix: text("key_prefix").notNull(),
+		keyHash: text("key_hash").notNull().unique(),
+		scopes: text("scopes").array().notNull().default(["bounties:read"]),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		lastUsedAt: timestamp("last_used_at"),
+		expiresAt: timestamp("expires_at"),
+		revokedAt: timestamp("revoked_at"),
+	},
+	(table) => [
+		index("api_key_credential_user_idx").on(table.userId),
+		index("api_key_credential_active_idx").on(table.keyHash, table.revokedAt),
+	],
+);
+
 export const authRelations = defineRelationsPart(
 	{
 		user,
@@ -321,6 +343,7 @@ export const authRelations = defineRelationsPart(
 		oauthConsent,
 		oauthClientAssertion,
 		mcpAuditLog,
+		apiKeyCredential,
 	},
 	(r) => ({
 		user: {

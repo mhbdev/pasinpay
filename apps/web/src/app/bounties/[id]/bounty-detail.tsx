@@ -45,6 +45,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowUpRight,
+	Bot,
 	Check,
 	Clock3,
 	Copy,
@@ -58,6 +59,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import type { Address } from "viem";
 import {
 	useAccount,
 	usePublicClient,
@@ -228,6 +230,8 @@ export default function BountyDetailPage() {
 	const { switchChainAsync } = useSwitchChain();
 	const { writeContractAsync } = useWriteContract();
 	const queryClient = useQueryClient();
+	const bountyEscrowAddress = (bounty?.chain.escrowAddress ??
+		chainConfig.escrowAddress) as Address;
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
@@ -240,15 +244,14 @@ export default function BountyDetailPage() {
 		: undefined;
 	const { data: onchainBounty, refetch: refetchOnchainBounty } =
 		useReadContract({
-			address: chainConfig.escrowAddress,
+			address: bountyEscrowAddress,
 			abi: escrowAbi,
 			functionName: "bounties",
 			args: onchainBountyId === undefined ? undefined : [onchainBountyId],
 			chainId: chainConfig.id,
 			query: {
 				enabled:
-					onchainBountyId !== undefined &&
-					chainConfig.escrowAddress !== ZERO_ADDRESS,
+					onchainBountyId !== undefined && bountyEscrowAddress !== ZERO_ADDRESS,
 				refetchInterval: 10_000,
 			},
 		});
@@ -282,6 +285,15 @@ export default function BountyDetailPage() {
 		}
 	}
 
+	async function copyAgentPrompt(prompt: string) {
+		try {
+			await navigator.clipboard.writeText(prompt);
+			toast.success("Agent prompt copied");
+		} catch {
+			toast.error("Could not copy the agent prompt");
+		}
+	}
+
 	async function call(functionName: BountyAction) {
 		if (!bounty?.onchainBountyId || !client || !address)
 			return setError("Connect the wallet used for this bounty first.");
@@ -292,10 +304,7 @@ export default function BountyDetailPage() {
 		try {
 			if (chainId !== chainConfig.id)
 				await switchChainAsync({ chainId: chainConfig.id });
-			if (
-				chainConfig.escrowAddress ===
-				"0x0000000000000000000000000000000000000000"
-			)
+			if (bountyEscrowAddress === "0x0000000000000000000000000000000000000000")
 				throw new Error(
 					`${chainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
 				);
@@ -322,7 +331,7 @@ export default function BountyDetailPage() {
 				);
 				const now = BigInt(Math.floor(Date.now() / 1000));
 				const onchainBounty = await client.readContract({
-					address: chainConfig.escrowAddress,
+					address: bountyEscrowAddress,
 					abi: escrowAbi,
 					functionName: "bounties",
 					args: [BigInt(onchainBountyId)],
@@ -352,7 +361,7 @@ export default function BountyDetailPage() {
 					claim.attestationSignature as `0x${string}`,
 				] as const;
 				await client.simulateContract({
-					address: chainConfig.escrowAddress,
+					address: bountyEscrowAddress,
 					abi: escrowAbi,
 					functionName,
 					account: address,
@@ -360,7 +369,7 @@ export default function BountyDetailPage() {
 				});
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
-						address: chainConfig.escrowAddress,
+						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
 						args: claimArgs,
@@ -380,7 +389,7 @@ export default function BountyDetailPage() {
 			} else if (functionName === "refundExpired") {
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
-						address: chainConfig.escrowAddress,
+						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
 						args: [BigInt(onchainBountyId)],
@@ -402,7 +411,7 @@ export default function BountyDetailPage() {
 					throw new Error("Only the bounty creator can manage this bounty.");
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
-						address: chainConfig.escrowAddress,
+						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
 						args: [BigInt(onchainBountyId)],
@@ -570,6 +579,17 @@ export default function BountyDetailPage() {
 				"\n\nPasinPay bounty: " +
 				(typeof window === "undefined" ? "" : window.location.href),
 		);
+	const agentPrompt = [
+		`Work on the PasinPay bounty: ${bounty.title}`,
+		`Repository: https://github.com/${bounty.repository}`,
+		`Issue: ${issueUrl}`,
+		`Bounty status: ${currentStatus}`,
+		`Reward: ${bounty.amount} USDG before any applicable platform fee`,
+		"",
+		`Read the issue carefully, implement the smallest production-quality change, add or update tests, and run the repository's checks before opening a pull request.`,
+		`Open the pull request with a title beginning exactly with [PasinPay #${bounty.issueNumber}]. Link the issue and describe the validation performed. Do not include secrets, private keys, or wallet credentials in the repository.`,
+		"PasinPay verifies the merged commit and the linked contributor wallet before any creator approval or payout. Creating this PR does not guarantee payment.",
+	].join("\n");
 	return (
 		<main className="mx-auto grid w-full max-w-6xl gap-8 px-5 py-12 lg:grid-cols-[1fr_360px]">
 			<div className="flex flex-col gap-8">
@@ -1017,6 +1037,30 @@ export default function BountyDetailPage() {
 								required
 							</p>
 						)}
+					</CardContent>
+				</Card>
+				<Card>
+					<CardHeader className="gap-2 border-b">
+						<CardTitle className="flex items-center gap-2 text-base">
+							<Bot className="size-4" /> Agent brief
+						</CardTitle>
+						<p className="text-muted-foreground text-xs leading-5">
+							Copy this context into Codex, Claude, Gemini, or another coding
+							agent. The agent works in your repository; PasinPay never receives
+							its credentials.
+						</p>
+					</CardHeader>
+					<CardContent className="flex flex-col gap-3">
+						<pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-muted-foreground text-xs leading-5">
+							{agentPrompt}
+						</pre>
+						<Button
+							onClick={() => void copyAgentPrompt(agentPrompt)}
+							size="sm"
+							variant="outline"
+						>
+							<Copy data-icon="inline-start" /> Copy agent prompt
+						</Button>
 					</CardContent>
 				</Card>
 				{isCreator && (

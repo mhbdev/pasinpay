@@ -12,7 +12,7 @@ export function UsdAmount({
 	amount: string;
 	className?: string;
 }) {
-	const { chainConfig } = useAppNetwork();
+	const { chainConfig, ready } = useAppNetwork();
 	const { data: decimals } = useReadContract({
 		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
@@ -27,7 +27,7 @@ export function UsdAmount({
 	});
 	let value: string | null = null;
 	try {
-		if (decimals !== undefined && symbol === "USDG") {
+		if (ready && decimals !== undefined && symbol === "USDG") {
 			value = formatUnits(BigInt(amount), decimals);
 		}
 	} catch {}

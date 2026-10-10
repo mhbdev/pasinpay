@@ -84,7 +84,7 @@ export const bountyRouter = router({
 						or(
 							eq(bounty.status, "Funded"),
 							eq(bounty.status, "ClaimPending"),
-							eq(bounty.status, "Paid"),
+							eq(bounty.status, "Disputed"),
 						),
 					),
 				ctx.db
@@ -489,14 +489,14 @@ export const bountyRouter = router({
 					image: creatorRow?.image ?? null,
 					githubLogin: repositoryInstallation?.accountLogin ?? null,
 					githubUrl: repositoryInstallation?.accountLogin
-						? "https://github.com/" + repositoryInstallation.accountLogin
+						? `https://github.com/${repositoryInstallation.accountLogin}`
 						: null,
 					wallet: row.creatorWallet,
 				},
 				chain: {
 					id: row.chainId,
 					name: ctx.chain.name,
-					escrowAddress: ctx.chain.escrowAddress,
+					escrowAddress: row.escrowAddress ?? ctx.chain.escrowAddress,
 					tokenAddress: ctx.chain.usdgAddress,
 					feeTreasury: ctx.chain.feeTreasury,
 					feeBps: ctx.chain.feeBps,
@@ -638,6 +638,7 @@ export const bountyRouter = router({
 					id: input.id,
 					userId: ctx.session.user.id,
 					chainId: input.chainId,
+					escrowAddress: ctx.chain.escrowAddress,
 					onchainBountyId: BigInt(input.onchainBountyId),
 					creatorWallet: getAddress(input.creatorWallet),
 					repository: input.repository,
@@ -655,11 +656,16 @@ export const bountyRouter = router({
 					status: "Open",
 				})
 				.onConflictDoUpdate({
-					target: bounty.onchainBountyId,
+					target: [
+						bounty.chainId,
+						bounty.escrowAddress,
+						bounty.onchainBountyId,
+					],
 					set: {
 						amount: rewardAmount,
 						feeAmount,
 						totalFunded,
+						escrowAddress: ctx.chain.escrowAddress,
 						status: "Open",
 						updatedAt: new Date(),
 					},
@@ -691,6 +697,8 @@ export const bountyRouter = router({
 				.where(
 					and(
 						eq(bounty.userId, ctx.session.user.id),
+						eq(bounty.chainId, ctx.chain.id),
+						eq(bounty.escrowAddress, ctx.chain.escrowAddress),
 						eq(bounty.onchainBountyId, BigInt(input.onchainBountyId)),
 					),
 				)

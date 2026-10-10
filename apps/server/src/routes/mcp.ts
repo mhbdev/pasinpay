@@ -3,13 +3,15 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
 	account,
+	apiKeyCredential,
 	bounty,
 	githubInstallation,
 	mcpAuditLog,
 	repository,
 	walletLink,
 } from "@pasinpay/db/schema/index";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
+import { keccak256, toBytes } from "viem";
 import { z } from "zod";
 import { ENV } from "../env.server";
 import { auth, db, githubService } from "../services";
@@ -306,3 +308,47 @@ export const mcpPost = requireMcpAuth(
 	},
 	{ resource: mcpResource, requiredScopes: ["bounties:read"] },
 );
+
+async function authenticateApiKey(request: Request) {
+	const authorization = request.headers.get("Authorization");
+	if (!authorization?.startsWith("Bearer pp_live_")) return null;
+	const secret = authorization.slice("Bearer ".length).trim();
+	if (secret.length < 20) return null;
+	const [key] = await db
+		.select({
+			id: apiKeyCredential.id,
+			userId: apiKeyCredential.userId,
+			scopes: apiKeyCredential.scopes,
+			expiresAt: apiKeyCredential.expiresAt,
+		})
+		.from(apiKeyCredential)
+		.where(
+			and(
+				eq(apiKeyCredential.keyHash, keccak256(toBytes(secret))),
+				isNull(apiKeyCredential.revokedAt),
+				or(
+					isNull(apiKeyCredential.expiresAt),
+					gt(apiKeyCredential.expiresAt, new Date()),
+				),
+			),
+		)
+		.limit(1);
+	if (!key) return null;
+	await db
+		.update(apiKeyCredential)
+		.set({ lastUsedAt: new Date() })
+		.where(eq(apiKeyCredential.id, key.id));
+	return { userId: key.userId, scopes: key.scopes };
+}
+
+export async function mcpRequest(request: Request) {
+	const apiKey = await authenticateApiKey(request);
+	if (!apiKey) return mcpPost(request);
+	const handler = createMcpHandler(
+		() => makeServer(apiKey.userId, apiKey.scopes),
+		{
+			legacy: "reject",
+		},
+	);
+	return handler.fetch(request);
+}

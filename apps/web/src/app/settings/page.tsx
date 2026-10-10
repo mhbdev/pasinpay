@@ -19,8 +19,10 @@ import {
 } from "@pasinpay/ui/components/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	Copy,
 	ExternalLink,
 	GitBranch,
+	KeyRound,
 	Link2,
 	RefreshCw,
 	ShieldCheck,
@@ -79,7 +81,23 @@ export default function SettingsPage() {
 	});
 	const [message, setMessage] = useState<string | null>(null);
 	const [unlinkOpen, setUnlinkOpen] = useState(false);
+	const [apiKeyName, setApiKeyName] = useState("Coding agent");
+	const [allowDrafts, setAllowDrafts] = useState(false);
+	const [createdKey, setCreatedKey] = useState<{
+		key: string;
+		name: string;
+		expiresAt: string | null;
+	} | null>(null);
 	const walletIsLinked = Boolean(wallet.data);
+	const apiKeys = useQuery(
+		trpc.apiKeys.list.queryOptions(undefined, { enabled: isAuthenticated }),
+	);
+	const createApiKey = useMutation(trpc.apiKeys.create.mutationOptions());
+	const revokeApiKey = useMutation(trpc.apiKeys.revoke.mutationOptions());
+	const mcpEndpoint = new URL(
+		"/mcp",
+		process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3000",
+	).toString();
 
 	async function connectWallet() {
 		try {
@@ -135,6 +153,41 @@ export default function SettingsPage() {
 			setMessage("Wallet unlinked successfully.");
 		} catch (error) {
 			setMessage(getReadableError(error, "Wallet unlinking failed."));
+		}
+	}
+
+	async function createAgentKey() {
+		try {
+			const result = await createApiKey.mutateAsync({
+				name: apiKeyName,
+				expiresInDays: 90,
+				allowDrafts,
+			});
+			setCreatedKey(result);
+			await apiKeys.refetch();
+			setMessage("API key created. Copy it now; it will not be shown again.");
+		} catch (error) {
+			setMessage(getReadableError(error, "API key creation failed."));
+		}
+	}
+
+	async function copyCreatedKey() {
+		if (!createdKey) return;
+		try {
+			await navigator.clipboard.writeText(createdKey.key);
+			setMessage("API key copied to the clipboard.");
+		} catch (error) {
+			setMessage(getReadableError(error, "Could not copy the API key."));
+		}
+	}
+
+	async function revokeAgentKey(id: string) {
+		try {
+			await revokeApiKey.mutateAsync({ id });
+			await apiKeys.refetch();
+			setMessage("API key revoked.");
+		} catch (error) {
+			setMessage(getReadableError(error, "API key revocation failed."));
 		}
 	}
 
@@ -309,6 +362,116 @@ export default function SettingsPage() {
 								</DialogFooter>
 							</DialogContent>
 						</Dialog>
+					</Card>
+					<Card>
+						<CardHeader>
+							<CardTitle className="flex items-center gap-2 text-base">
+								<KeyRound className="size-4" /> Agent access
+							</CardTitle>
+							<CardDescription>
+								Connect an MCP-compatible agent with OAuth consent or a scoped,
+								revocable API key. Keys can read bounties and optionally prepare
+								drafts; they never approve wallets or move funds.
+							</CardDescription>
+						</CardHeader>
+						<CardFooter className="flex-col items-stretch gap-5">
+							<div className="rounded-lg border bg-muted/30 p-4 text-sm">
+								<p className="font-medium">MCP endpoint</p>
+								<code className="mt-2 block break-all text-muted-foreground text-xs">
+									{mcpEndpoint}
+								</code>
+								<p className="mt-3 text-muted-foreground text-xs leading-5">
+									OAuth clients use the consent page automatically. API-key
+									clients must send{" "}
+									<code>Authorization: Bearer &lt;key&gt;</code>.
+								</p>
+							</div>
+							<div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+								<input
+									aria-label="API key name"
+									className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									maxLength={80}
+									onChange={(event) => setApiKeyName(event.target.value)}
+									placeholder="API key name"
+									value={apiKeyName}
+								/>
+								<Button
+									disabled={createApiKey.isPending || !apiKeyName.trim()}
+									onClick={() => void createAgentKey()}
+								>
+									{createApiKey.isPending ? "Creating…" : "Create API key"}
+								</Button>
+							</div>
+							<label className="flex items-start gap-3 text-muted-foreground text-sm">
+								<input
+									checked={allowDrafts}
+									className="mt-1"
+									onChange={(event) => setAllowDrafts(event.target.checked)}
+									type="checkbox"
+								/>
+								<span>
+									Allow draft preparation
+									<span className="block text-xs">
+										Adds <code>bounties:write</code>; the agent still cannot
+										create, fund, approve, or settle a bounty.
+									</span>
+								</span>
+							</label>
+							{createdKey && (
+								<div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+									<p className="font-medium text-sm">Copy this key now</p>
+									<p className="mt-1 text-muted-foreground text-xs">
+										For your security, PasinPay will not display it again.
+									</p>
+									<div className="mt-3 flex items-center gap-2">
+										<code className="min-w-0 flex-1 break-all rounded border bg-background p-2 text-xs">
+											{createdKey.key}
+										</code>
+										<Button
+											aria-label="Copy API key"
+											onClick={() => void copyCreatedKey()}
+											size="icon"
+											variant="outline"
+										>
+											<Copy />
+										</Button>
+									</div>
+								</div>
+							)}
+							{apiKeys.data && apiKeys.data.length > 0 && (
+								<div className="divide-y rounded-lg border">
+									{apiKeys.data.map((key) => (
+										<div
+											className="flex flex-wrap items-center justify-between gap-3 p-3"
+											key={key.id}
+										>
+											<div className="min-w-0">
+												<p className="font-medium text-sm">{key.name}</p>
+												<p className="font-mono text-muted-foreground text-xs">
+													{key.keyPrefix}… · {key.scopes.join(", ")}
+												</p>
+												<p className="text-muted-foreground text-xs">
+													{key.revokedAt ? "Revoked" : "Active"}
+													{key.expiresAt
+														? ` · expires ${new Date(key.expiresAt).toLocaleDateString()}`
+														: ""}
+												</p>
+											</div>
+											{!key.revokedAt && (
+												<Button
+													disabled={revokeApiKey.isPending}
+													onClick={() => void revokeAgentKey(key.id)}
+													size="sm"
+													variant="outline"
+												>
+													Revoke
+												</Button>
+											)}
+										</div>
+									))}
+								</div>
+							)}
+						</CardFooter>
 					</Card>
 				</div>
 				{message && (

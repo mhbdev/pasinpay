@@ -19,11 +19,13 @@ export function getConfiguredAttestorAddress(): Address {
 	return privateKeyToAccount(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY as Hex).address;
 }
 
-export async function getContractAttestorAddress(): Promise<Address> {
-	if (chainConfig.escrowAddress === zeroAddress)
+export async function getContractAttestorAddress(
+	escrowAddress = chainConfig.escrowAddress,
+): Promise<Address> {
+	if (escrowAddress === zeroAddress)
 		throw new Error("PASINPAY_ESCROW_ADDRESS is not configured");
 	return publicClient.readContract({
-		address: chainConfig.escrowAddress,
+		address: escrowAddress,
 		abi: escrowAbi,
 		functionName: "attestor",
 	});
@@ -34,12 +36,14 @@ export async function getContractAttestorAddress(): Promise<Address> {
  * unless the configured private key resolves to the address currently trusted
  * by the deployed escrow.
  */
-export async function assertAttestorMatchesContract(): Promise<{
+export async function assertAttestorMatchesContract(
+	escrowAddress = chainConfig.escrowAddress,
+): Promise<{
 	configured: Address;
 	onChain: Address;
 }> {
 	const configured = getConfiguredAttestorAddress();
-	const onChain = await getContractAttestorAddress();
+	const onChain = await getContractAttestorAddress(escrowAddress);
 	if (configured.toLowerCase() !== onChain.toLowerCase()) {
 		throw new Error(
 			`Configured claim attestor ${configured} does not match the escrow attestor ${onChain}`,
@@ -50,11 +54,12 @@ export async function assertAttestorMatchesContract(): Promise<{
 
 export async function signClaim(
 	message: ClaimMessage,
+	escrowAddress = chainConfig.escrowAddress,
 ): Promise<{ signer: Address; signature: Hex }> {
-	const { onChain } = await assertAttestorMatchesContract();
+	const { onChain } = await assertAttestorMatchesContract(escrowAddress);
 	const account = privateKeyToAccount(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY as Hex);
 	const signature = await account.signTypedData({
-		domain: claimDomain(chainConfig.id, chainConfig.escrowAddress),
+		domain: claimDomain(chainConfig.id, escrowAddress),
 		types: claimTypes,
 		primaryType: "Claim",
 		message,
@@ -62,7 +67,7 @@ export async function signClaim(
 	if (
 		!(await verifyClaimSignature(
 			chainConfig.id,
-			chainConfig.escrowAddress,
+			escrowAddress,
 			message,
 			signature,
 			onChain,

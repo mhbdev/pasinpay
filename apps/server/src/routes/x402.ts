@@ -146,6 +146,7 @@ app.get("/bounties/:id/funding", async (c) => {
 			chainId: bounty.chainId,
 			amount: bounty.amount,
 			creatorWallet: bounty.creatorWallet,
+			escrowAddress: bounty.escrowAddress,
 			status: bounty.status,
 			onchainBountyId: bounty.onchainBountyId,
 		})
@@ -154,6 +155,15 @@ app.get("/bounties/:id/funding", async (c) => {
 		.limit(1);
 	if (row?.status !== "Open" || !row.onchainBountyId) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
+	}
+	if (
+		row.escrowAddress &&
+		row.escrowAddress.toLowerCase() !== chainConfig.escrowAddress.toLowerCase()
+	) {
+		return c.json(
+			{ error: "This bounty belongs to a different escrow deployment." },
+			409,
+		);
 	}
 	const url = new URL(
 		`/api/x402/bounties/${row.id}/fund`,
@@ -223,13 +233,23 @@ app.post("/bounties/:id/fund", async (c) => {
 			onchainBountyId: bounty.onchainBountyId,
 			amount: bounty.amount,
 			creatorWallet: bounty.creatorWallet,
+			escrowAddress: bounty.escrowAddress,
 			status: bounty.status,
 		})
 		.from(bounty)
 		.where(eq(bounty.id, id))
 		.limit(1);
-	if (!row?.onchainBountyId) {
+	if (row?.status !== "Open" || !row.onchainBountyId) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
+	}
+	if (
+		row.escrowAddress &&
+		row.escrowAddress.toLowerCase() !== chainConfig.escrowAddress.toLowerCase()
+	) {
+		return c.json(
+			{ error: "This bounty belongs to a different escrow deployment." },
+			409,
+		);
 	}
 	const url = new URL(
 		`/api/x402/bounties/${row.id}/fund`,

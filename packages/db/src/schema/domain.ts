@@ -73,6 +73,7 @@ export const bounty = pgTable(
 		id: uuid("id").defaultRandom().primaryKey(),
 		userId: text("user_id").notNull(),
 		chainId: integer("chain_id").notNull().default(421614),
+		escrowAddress: text("escrow_address"),
 		onchainBountyId: bigint("onchain_bounty_id", { mode: "bigint" }),
 		creatorWallet: text("creator_wallet").notNull(),
 		repository: text("repository").notNull(),
@@ -99,7 +100,11 @@ export const bounty = pgTable(
 		updatedAt: timestamp("updated_at").defaultNow().notNull(),
 	},
 	(table) => [
-		uniqueIndex("bounty_chain_id_idx").on(table.onchainBountyId),
+		uniqueIndex("bounty_chain_escrow_id_idx").on(
+			table.chainId,
+			table.escrowAddress,
+			table.onchainBountyId,
+		),
 		index("bounty_creator_idx").on(table.creatorWallet),
 		index("bounty_status_idx").on(table.status),
 	],

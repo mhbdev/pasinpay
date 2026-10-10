@@ -183,6 +183,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				);
 	for (const log of refunded)
@@ -194,6 +195,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				);
 	for (const log of disputed)
@@ -205,6 +207,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				);
 	for (const log of cancelled)
@@ -216,6 +219,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				);
 	for (const log of claimSubmitted)
@@ -261,6 +265,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				);
 		}
@@ -277,6 +282,7 @@ async function syncChainEvents() {
 					and(
 						eq(bounty.onchainBountyId, log.args.bountyId),
 						eq(bounty.chainId, chainConfig.id),
+						eq(bounty.escrowAddress, chainConfig.escrowAddress),
 					),
 				)
 				.returning();
@@ -359,6 +365,8 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		bountyRow.repository.toLowerCase() !== repository.toLowerCase()
 	)
 		return;
+	const escrowAddress = (bountyRow.escrowAddress ??
+		chainConfig.escrowAddress) as Address;
 	const onchainBountyId = bountyRow.onchainBountyId;
 	const prNumber = pr.number;
 	const mergeCommitSha = pr.merge_commit_sha;
@@ -388,7 +396,7 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		throw new Error(`GitHub user ${pr.user.login} has no linked wallet`);
 
 	const onchainBounty = await publicClient.readContract({
-		address: chainConfig.escrowAddress,
+		address: escrowAddress,
 		abi: escrowAbi,
 		functionName: "bounties",
 		args: [onchainBountyId],
@@ -443,22 +451,18 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 			),
 			nonce: existingClaim.attestationNonce,
 		};
-		const attestor = await getContractAttestorAddress();
+		const attestor = await getContractAttestorAddress(escrowAddress);
 		const isTrusted = await verifyClaimSignature(
 			chainConfig.id,
-			chainConfig.escrowAddress,
+			escrowAddress,
 			existingMessage,
 			existingClaim.attestationSignature as Hex,
 			attestor,
 		);
 		if (isTrusted) return;
 	}
-	const { signature } = await signClaim(message);
-	const digest = claimDigest(
-		chainConfig.id,
-		chainConfig.escrowAddress,
-		message,
-	);
+	const { signature } = await signClaim(message, escrowAddress);
+	const digest = claimDigest(chainConfig.id, escrowAddress, message);
 
 	await db.transaction(async (tx) => {
 		if (existingClaim) {
@@ -567,7 +571,7 @@ async function reconcileGitHubClaims() {
 				Boolean(pullRequest.merge_commit_sha) &&
 				marker.test(pullRequest.title),
 		);
-		if (!mergedPullRequest || !mergedPullRequest.user) continue;
+		if (!mergedPullRequest?.user) continue;
 
 		const installationId = Number(row.installationId);
 		if (!Number.isSafeInteger(installationId)) {

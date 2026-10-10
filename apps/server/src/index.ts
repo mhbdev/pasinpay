@@ -15,7 +15,7 @@ import { createContext } from "./context";
 import { ENV } from "./env.server";
 import { assertAttestorMatchesContract } from "./lib/attestor";
 import { githubWebhook } from "./routes/github-webhook";
-import { mcpPost } from "./routes/mcp";
+import { mcpRequest } from "./routes/mcp";
 import { x402Routes } from "./routes/x402";
 import { auth, chainConfig, db, publicClient } from "./services";
 
@@ -86,7 +86,7 @@ app.on(["GET", "POST", "DELETE"], "/mcp", async (c) => {
 	if (origin && origin !== ENV.CORS_ORIGIN) {
 		return c.json({ error: "Untrusted MCP origin." }, 403);
 	}
-	return mcpPost(c.req.raw);
+	return mcpRequest(c.req.raw);
 });
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "pasinpay-server" }));

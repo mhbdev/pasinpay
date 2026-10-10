@@ -14,6 +14,8 @@ The server exposes these tools:
 
 The token needs `bounties:read` to call the server. Preparing a draft also requires `bounties:write`. That scope only permits draft preparation; funding still happens in the authenticated PasinPay UI with a user wallet. The consent screen verifies Better Auth's signed OAuth query before showing the requested scopes. Draft requests are recorded in `mcp_audit_log`.
 
+Users can also create a scoped MCP API key from Settings. Keys are shown once, stored as hashes, expire after 90 days by default, and can be revoked. Send one as `Authorization: Bearer pp_live_…` to the MCP endpoint. A read-only key can discover and inspect bounties; enabling draft preparation adds `bounties:write` but still cannot create, fund, approve, or settle a bounty. Treat the key like a password and never commit it to a repository or agent prompt.
+
 Coding agents run in the user's chosen environment. They use their own repository permissions to change code and open pull requests. PasinPay does not run or host those agents. The existing GitHub merge evidence, claim attestation, and escrow payout process handles accepted work.
 
 ## x402 bounty funding
