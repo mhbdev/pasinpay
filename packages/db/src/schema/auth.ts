@@ -90,6 +90,17 @@ export const rateLimit = pgTable("rate_limit", {
 	lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });
 
+// Better Auth's JWT plugin persists signing keys in this model.
+export const jwks = pgTable("jwks", {
+	id: text("id").primaryKey(),
+	publicKey: text("public_key").notNull(),
+	privateKey: text("private_key").notNull(),
+	createdAt: timestamp("created_at").notNull(),
+	expiresAt: timestamp("expires_at"),
+	alg: text("alg"),
+	crv: text("crv"),
+});
+
 // Better Auth's MCP plugin persists OAuth clients, consents, and tokens here.
 export const oauthClient = pgTable(
 	"oauth_client",
