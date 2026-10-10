@@ -18,7 +18,11 @@ function configuredAddress(value: string | undefined) {
 	return (value ?? zeroAddress) as `0x${string}`;
 }
 
-export const defaultWebChainId: WebChainId = arbitrumSepolia.id;
+const configuredDefaultChainId = Number(
+	process.env.NEXT_PUBLIC_CHAIN_ID ?? arbitrumSepolia.id,
+);
+export const defaultWebChainId: WebChainId =
+	configuredDefaultChainId === arbitrum.id ? arbitrum.id : arbitrumSepolia.id;
 
 export const webChainConfigs: Record<WebChainId, ChainConfig> = {
 	[arbitrumSepolia.id]: {
@@ -59,5 +63,12 @@ export const webChainConfigs: Record<WebChainId, ChainConfig> = {
 };
 
 export const webChainConfig = webChainConfigs[defaultWebChainId];
+
+export function isWebChainConfigured(chainId: WebChainId) {
+	return (
+		chainId === defaultWebChainId &&
+		webChainConfigs[chainId].escrowAddress.toLowerCase() !== zeroAddress
+	);
+}
 
 export const activeChain = arbitrumSepolia;

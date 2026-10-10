@@ -134,7 +134,9 @@ app.get("/api/readiness", async (c) => {
 			x402Sepolia:
 				chainConfig.id === 421614 &&
 				x402Adapter &&
-				Boolean(ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY),
+				Boolean(ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY) &&
+				/^\d+$/.test(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK) &&
+				BigInt(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK) > 0n,
 		};
 		const { x402Sepolia, ...requiredConfiguration } = configuration;
 		if (

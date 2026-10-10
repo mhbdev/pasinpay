@@ -5,7 +5,7 @@ import {
 	encodePaymentRequiredHeader,
 	encodePaymentResponseHeader,
 } from "@x402/core/http";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { Hono } from "hono";
 import {
 	createWalletClient,
@@ -15,11 +15,11 @@ import {
 	isAddress,
 	keccak256,
 	parseAbiItem,
-	stringToHex,
 	verifyTypedData,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ENV } from "../env.server";
+import { hashX402Payment } from "../lib/x402-payment";
 import { chain, chainConfig, db, publicClient } from "../services";
 
 const app = new Hono();
@@ -218,7 +218,7 @@ app.post("/bounties/:id/fund", async (c) => {
 		.from(bounty)
 		.where(eq(bounty.id, id))
 		.limit(1);
-	if (row?.status !== "Open" || !row.onchainBountyId) {
+	if (!row?.onchainBountyId) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
 	}
 	const url = new URL(
@@ -271,6 +271,7 @@ app.post("/bounties/:id/fund", async (c) => {
 	if (!payment)
 		return fallback("A valid PAYMENT-SIGNATURE header is required.");
 	const accepted = payment.accepted as Record<string, unknown>;
+	const paymentExtra = accepted?.extra as Record<string, unknown> | undefined;
 	const payload = payment.payload as Record<string, unknown>;
 	const authorization = payload.authorization as
 		| Record<string, unknown>
@@ -281,6 +282,10 @@ app.post("/bounties/:id/fund", async (c) => {
 		payment.x402Version !== 2 ||
 		accepted?.scheme !== "exact" ||
 		accepted?.network !== network ||
+		paymentExtra?.assetTransferMethod !== "eip3009" ||
+		paymentExtra?.name !== tokenDomain.name ||
+		paymentExtra?.version !== tokenDomain.version ||
+		accepted?.maxTimeoutSeconds !== 300 ||
 		accepted?.asset?.toString().toLowerCase() !==
 			chainConfig.usdgAddress.toLowerCase() ||
 		accepted?.payTo?.toString().toLowerCase() !==
@@ -289,8 +294,11 @@ app.post("/bounties/:id/fund", async (c) => {
 		typeof authorization?.from !== "string" ||
 		typeof authorization?.to !== "string" ||
 		typeof authorization?.value !== "string" ||
+		!/^\d{1,78}$/.test(authorization.value) ||
 		typeof authorization?.validAfter !== "string" ||
+		!/^\d{1,78}$/.test(authorization.validAfter) ||
 		typeof authorization?.validBefore !== "string" ||
+		!/^\d{1,78}$/.test(authorization.validBefore) ||
 		typeof authorization?.nonce !== "string" ||
 		typeof tokenSignature !== "string" ||
 		typeof fundingIntentSignature !== "string"
@@ -364,7 +372,17 @@ app.post("/bounties/:id/fund", async (c) => {
 			],
 		),
 	);
-	const paymentPayloadHash = keccak256(stringToHex(JSON.stringify(payment)));
+	const paymentPayloadHash = hashX402Payment({
+		resource: url,
+		bountyId: row.id,
+		payer: row.creatorWallet,
+		amount: authorizationValue,
+		validAfter,
+		validBefore,
+		nonce: authorizationNonce,
+		tokenSignature,
+		fundingIntentSignature,
+	});
 	try {
 		const validAuthorization = await verifyTypedData({
 			address: getAddress(row.creatorWallet),
@@ -424,7 +442,25 @@ app.post("/bounties/:id/fund", async (c) => {
 			),
 		)
 		.limit(1);
+	if (existing && existing.payloadHash !== paymentPayloadHash) {
+		return c.json(
+			{
+				error:
+					"This authorization nonce is already bound to a different payment.",
+			},
+			409,
+		);
+	}
 	if (existing?.status === "settled" && existing.transactionHash) {
+		await db
+			.update(bounty)
+			.set({
+				status: "Funded",
+				feeAmount,
+				totalFunded: totalAmount,
+				updatedAt: new Date(),
+			})
+			.where(eq(bounty.id, row.id));
 		return c.json(
 			paymentResponse(
 				true,
@@ -445,6 +481,8 @@ app.post("/bounties/:id/fund", async (c) => {
 			},
 		);
 	}
+	let paymentAttemptId: string | undefined;
+	let canSubmitSettlement = false;
 	if (existing?.status === "pending" && existing.transactionHash) {
 		try {
 			const receipt = await publicClient.getTransactionReceipt({
@@ -483,6 +521,13 @@ app.post("/bounties/:id/fund", async (c) => {
 					updatedAt: new Date(),
 				})
 				.where(eq(x402FundingPayment.id, existing.id));
+			return c.json(
+				{
+					error:
+						"The escrow rejected this settlement. Request a fresh quote before trying again.",
+				},
+				409,
+			);
 		} catch {
 			return c.json(
 				{ status: "settlement_pending", transaction: existing.transactionHash },
@@ -490,10 +535,34 @@ app.post("/bounties/:id/fund", async (c) => {
 			);
 		}
 	}
-	if (existing?.status === "pending" && !existing.transactionHash) {
+	if (
+		existing &&
+		(existing.status === "pending" || existing.status === "processing") &&
+		!existing.transactionHash
+	) {
 		// A process can stop after broadcasting a transaction but before persisting its
-		// hash. First recover a matching on-chain event; after a short lease, retry the
-		// same signed authorization, which the contract protects against replay.
+		// hash. Serialize recovery checks so retries do not repeatedly scan chain logs.
+		if (Date.now() - existing.updatedAt.getTime() < 30_000) {
+			return c.json({ status: "settlement_pending" }, 202);
+		}
+		const [claimed] = await db
+			.update(x402FundingPayment)
+			.set({
+				status: "processing",
+				lastError: "settlement lease expired; checking the chain",
+				updatedAt: new Date(),
+			})
+			.where(
+				and(
+					eq(x402FundingPayment.id, existing.id),
+					eq(x402FundingPayment.status, existing.status),
+					lt(x402FundingPayment.updatedAt, new Date(Date.now() - 30_000)),
+				),
+			)
+			.returning({ id: x402FundingPayment.id });
+		if (!claimed) return c.json({ status: "settlement_pending" }, 202);
+		paymentAttemptId = claimed.id;
+		canSubmitSettlement = true;
 		try {
 			const logs = await publicClient.getLogs({
 				address: chainConfig.escrowAddress,
@@ -503,7 +572,7 @@ app.post("/bounties/:id/fund", async (c) => {
 					payer: getAddress(row.creatorWallet),
 					authorizationNonce,
 				},
-				fromBlock: 0n,
+				fromBlock: BigInt(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK),
 				toBlock: "latest",
 			});
 			const recovered = logs.at(-1);
@@ -540,28 +609,31 @@ app.post("/bounties/:id/fund", async (c) => {
 		} catch {
 			return c.json({ status: "settlement_pending" }, 202);
 		}
-		if (Date.now() - existing.updatedAt.getTime() < 30_000) {
-			return c.json({ status: "settlement_pending" }, 202);
-		}
-		await db
+	}
+	if (existing?.status === "failed") {
+		const [claimed] = await db
 			.update(x402FundingPayment)
 			.set({
-				status: "failed",
-				lastError: "settlement worker lease expired; retrying authorization",
+				status: "processing",
+				transactionHash: null,
+				lastError: null,
 				updatedAt: new Date(),
 			})
-			.where(eq(x402FundingPayment.id, existing.id));
-	}
-	if (existing && existing.payloadHash !== paymentPayloadHash) {
-		return c.json(
-			{
-				error:
-					"This authorization nonce is already bound to a different payment.",
-			},
-			409,
-		);
+			.where(
+				and(
+					eq(x402FundingPayment.id, existing.id),
+					eq(x402FundingPayment.status, "failed"),
+				),
+			)
+			.returning({ id: x402FundingPayment.id });
+		if (!claimed) return c.json({ status: "settlement_pending" }, 202);
+		paymentAttemptId = claimed.id;
+		canSubmitSettlement = true;
 	}
 	if (!existing) {
+		if (row.status !== "Open") {
+			return c.json({ error: "This bounty has already been funded." }, 409);
+		}
 		const inserted = await db
 			.insert(x402FundingPayment)
 			.values({
@@ -569,25 +641,21 @@ app.post("/bounties/:id/fund", async (c) => {
 				payerWallet: row.creatorWallet.toLowerCase(),
 				authorizationNonce: authorizationNonce.toLowerCase(),
 				payloadHash: paymentPayloadHash,
-				status: "pending",
+				status: "processing",
 			})
 			.onConflictDoNothing()
 			.returning({ id: x402FundingPayment.id });
 		if (inserted.length === 0) {
 			return c.json({ status: "settlement_pending" }, 202);
 		}
-	} else if (existing.status === "failed") {
-		await db
-			.update(x402FundingPayment)
-			.set({
-				status: "pending",
-				transactionHash: null,
-				lastError: null,
-				updatedAt: new Date(),
-			})
-			.where(eq(x402FundingPayment.id, existing.id));
+		paymentAttemptId = inserted[0]?.id;
+		canSubmitSettlement = true;
+	}
+	if (!canSubmitSettlement || !paymentAttemptId) {
+		return c.json({ status: "settlement_pending" }, 202);
 	}
 
+	let submittedTransactionHash: `0x${string}` | undefined;
 	try {
 		const account = privateKeyToAccount(
 			ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY as `0x${string}`,
@@ -612,6 +680,7 @@ app.post("/bounties/:id/fund", async (c) => {
 				fundingIntentSignature as `0x${string}`,
 			],
 		});
+		submittedTransactionHash = transactionHash;
 		await db
 			.update(x402FundingPayment)
 			.set({
@@ -622,32 +691,47 @@ app.post("/bounties/:id/fund", async (c) => {
 			})
 			.where(
 				and(
-					eq(x402FundingPayment.payerWallet, row.creatorWallet.toLowerCase()),
-					eq(
-						x402FundingPayment.authorizationNonce,
-						authorizationNonce.toLowerCase(),
-					),
+					eq(x402FundingPayment.id, paymentAttemptId),
+					eq(x402FundingPayment.status, "processing"),
 				),
 			);
+		let receipt: Awaited<
+			ReturnType<typeof publicClient.waitForTransactionReceipt>
+		>;
 		try {
-			const receipt = await publicClient.waitForTransactionReceipt({
+			receipt = await publicClient.waitForTransactionReceipt({
 				hash: transactionHash,
 				timeout: 20_000,
 			});
-			if (receipt.status !== "success")
-				throw new Error("Escrow settlement reverted.");
+		} catch {
+			return c.json(
+				{ status: "settlement_pending", transaction: transactionHash },
+				202,
+			);
+		}
+		if (receipt.status !== "success") {
+			await db
+				.update(x402FundingPayment)
+				.set({
+					status: "failed",
+					transactionHash: null,
+					lastError: "settlement transaction reverted",
+					updatedAt: new Date(),
+				})
+				.where(eq(x402FundingPayment.id, paymentAttemptId));
+			return c.json(
+				{
+					error:
+						"The escrow rejected this settlement. Check the bounty status before retrying.",
+				},
+				409,
+			);
+		}
+		try {
 			await db
 				.update(x402FundingPayment)
 				.set({ status: "settled", updatedAt: new Date() })
-				.where(
-					and(
-						eq(x402FundingPayment.payerWallet, row.creatorWallet.toLowerCase()),
-						eq(
-							x402FundingPayment.authorizationNonce,
-							authorizationNonce.toLowerCase(),
-						),
-					),
-				);
+				.where(eq(x402FundingPayment.id, paymentAttemptId));
 			await db
 				.update(bounty)
 				.set({
@@ -673,32 +757,37 @@ app.post("/bounties/:id/fund", async (c) => {
 			);
 		}
 	} catch (error) {
+		// An RPC error can happen after a broadcast reached the network. Keep a known
+		// transaction pending, or leave an unknown broadcast in its processing lease,
+		// so retries reconcile on-chain before another settlement can be claimed.
 		await db
 			.update(x402FundingPayment)
 			.set({
-				status: "failed",
+				...(submittedTransactionHash
+					? {
+							status: "pending",
+							transactionHash: submittedTransactionHash,
+						}
+					: {}),
 				lastError:
 					error instanceof Error
 						? error.name.slice(0, 80)
-						: "settlement failed",
+						: "settlement outcome is uncertain",
 				updatedAt: new Date(),
 			})
 			.where(
 				and(
-					eq(x402FundingPayment.payerWallet, row.creatorWallet.toLowerCase()),
-					eq(
-						x402FundingPayment.authorizationNonce,
-						authorizationNonce.toLowerCase(),
-					),
+					eq(x402FundingPayment.id, paymentAttemptId),
+					eq(x402FundingPayment.status, "processing"),
 				),
 			);
-		return c.json(
-			{
-				error:
-					"x402 escrow settlement failed; the payment authorization remains retryable.",
-			},
-			502,
-		);
+		if (submittedTransactionHash) {
+			return c.json(
+				{ status: "settlement_pending", transaction: submittedTransactionHash },
+				202,
+			);
+		}
+		return c.json({ status: "settlement_pending" }, 202);
 	}
 });
 

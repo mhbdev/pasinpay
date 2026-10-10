@@ -13,6 +13,7 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { getReadableError } from "@/lib/errors";
 import {
 	defaultWebChainId,
+	isWebChainConfigured,
 	type WebChainId,
 	webChainConfigs,
 } from "@/lib/wallet";
@@ -44,12 +45,21 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
 	useEffect(() => {
 		const stored = Number(window.localStorage.getItem(storageKey));
-		if (isWebChainId(stored)) setChainId(stored);
+		if (isWebChainId(stored) && isWebChainConfigured(stored)) {
+			setChainId(stored);
+		} else {
+			setChainId(defaultWebChainId);
+			window.localStorage.setItem(storageKey, String(defaultWebChainId));
+		}
 		setReady(true);
 	}, []);
 
 	const selectNetwork = useCallback(
 		async (nextChainId: WebChainId) => {
+			if (!isWebChainConfigured(nextChainId)) {
+				setError("This network is not enabled for PasinPay yet.");
+				return;
+			}
 			const previousChainId = chainId;
 			setError(null);
 			setChainId(nextChainId);

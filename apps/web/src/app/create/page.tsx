@@ -179,6 +179,8 @@ export default function CreateBountyPage() {
 	const totalFunded = rewardAmount + feeAmount;
 
 	function validate() {
+		if (/^0x0{40}$/i.test(chainConfig.escrowAddress))
+			return "Bounty funding is not enabled on this network yet.";
 		if (!address)
 			return "Connect and link your wallet before funding a bounty.";
 		if (!repository) return "Select an installed GitHub repository.";
@@ -446,18 +448,36 @@ export default function CreateBountyPage() {
 						...new TextEncoder().encode(JSON.stringify(paymentPayload)),
 					),
 				);
-				const settlementResponse = await fetch(fundUrl, {
+				setStep("funding");
+				let settlementResponse = await fetch(fundUrl, {
 					method: "POST",
 					headers: { "PAYMENT-SIGNATURE": encodedPayload },
 					cache: "no-store",
 				});
-				const settlement = (await settlementResponse
+				let settlement = (await settlementResponse
 					.json()
 					.catch(() => null)) as {
 					error?: string;
 					status?: string;
 					transaction?: `0x${string}`;
 				} | null;
+				for (
+					let attempt = 0;
+					attempt < 14 &&
+					settlementResponse.status === 202 &&
+					!settlement?.transaction;
+					attempt++
+				) {
+					await new Promise((resolve) => setTimeout(resolve, 5_000));
+					settlementResponse = await fetch(fundUrl, {
+						method: "POST",
+						headers: { "PAYMENT-SIGNATURE": encodedPayload },
+						cache: "no-store",
+					});
+					settlement = (await settlementResponse
+						.json()
+						.catch(() => null)) as typeof settlement;
+				}
 				if (
 					settlementResponse.status === 503 &&
 					settlement?.error?.includes("relayer is not configured")
@@ -487,7 +507,7 @@ export default function CreateBountyPage() {
 					if (!settlementResponse.ok || !settlement?.transaction) {
 						throw new Error(
 							settlement?.error ??
-								"x402 settlement could not be confirmed. Retry from the bounty page.",
+								"PasinPay could not confirm the x402 settlement yet. Check this bounty's on-chain status before taking another payment action.",
 						);
 					}
 					fundingHash = settlement.transaction;

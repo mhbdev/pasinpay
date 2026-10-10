@@ -7,6 +7,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@pasinpay/ui/components/select";
+import { isWebChainConfigured } from "@/lib/wallet";
 import { useAppNetwork } from "./network-provider";
 
 export function NetworkSelector() {
@@ -42,8 +43,12 @@ export function NetworkSelector() {
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContent className="min-w-[190px]">
-					<SelectItem value="421614">Arbitrum Sepolia · Testnet</SelectItem>
-					<SelectItem value="42161">Arbitrum One · Mainnet</SelectItem>
+					<SelectItem value="421614" disabled={!isWebChainConfigured(421614)}>
+						Arbitrum Sepolia · Testnet
+					</SelectItem>
+					<SelectItem value="42161" disabled={!isWebChainConfigured(42161)}>
+						Arbitrum One · Mainnet · not enabled
+					</SelectItem>
 				</SelectContent>
 			</Select>
 		</div>
