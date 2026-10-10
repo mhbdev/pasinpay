@@ -1,4 +1,4 @@
-import { escrowAbi } from "@pasinpay/chain";
+import { escrowAbi, supportsX402Funding } from "@pasinpay/chain";
 import { bounty, x402FundingPayment } from "@pasinpay/db/schema/index";
 import {
 	decodePaymentSignatureHeader,
@@ -175,13 +175,13 @@ app.get("/bounties/:id/funding", async (c) => {
 		);
 	}
 	try {
-		// The adapter is part of the deployed escrow ABI; this read prevents publishing
-		// a payment quote against an older contract that would strand direct x402 funds.
-		await publicClient.readContract({
-			address: chainConfig.escrowAddress,
-			abi: escrowAbi,
-			functionName: "totalEscrowed",
-		});
+		// Do not publish payment requirements unless both the x402 escrow adapter and
+		// the token's EIP-3009 authorization state are available on the active network.
+		if (!(await supportsX402Funding(publicClient, chainConfig))) {
+			throw new Error(
+				"The x402 escrow or USDG EIP-3009 interface is unavailable.",
+			);
+		}
 		const feeBps = await publicClient.readContract({
 			address: chainConfig.escrowAddress,
 			abi: escrowAbi,

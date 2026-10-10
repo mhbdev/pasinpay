@@ -1,6 +1,7 @@
 import { type Address, getAddress, type PublicClient } from "viem";
 import { arbitrum, arbitrumSepolia } from "viem/chains";
 
+import { escrowAbi } from "./abi";
 import type { ChainConfig } from "./types";
 
 export const ARBITRUM_SEPOLIA_ID = 421614;
@@ -121,6 +122,46 @@ export const erc20MetadataAbi = [
 		outputs: [{ type: "string" }],
 	},
 ] as const;
+
+const eip3009AuthorizationStateAbi = [
+	{
+		type: "function",
+		name: "authorizationState",
+		stateMutability: "view",
+		inputs: [
+			{ name: "authorizer", type: "address" },
+			{ name: "nonce", type: "bytes32" },
+		],
+		outputs: [{ name: "", type: "bool" }],
+	},
+] as const;
+
+export async function supportsX402Funding(
+	publicClient: PublicClient,
+	config: ChainConfig,
+) {
+	const zeroAddress: Address = "0x0000000000000000000000000000000000000000";
+	const zeroNonce = `0x${"0".repeat(64)}` as `0x${string}`;
+	try {
+		await Promise.all([
+			publicClient.readContract({
+				address: config.escrowAddress,
+				abi: escrowAbi,
+				functionName: "usedX402Nonces",
+				args: [zeroAddress, zeroNonce],
+			}),
+			publicClient.readContract({
+				address: config.usdgAddress,
+				abi: eip3009AuthorizationStateAbi,
+				functionName: "authorizationState",
+				args: [zeroAddress, zeroNonce],
+			}),
+		]);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 export async function assertUsdGToken(
 	publicClient: PublicClient,

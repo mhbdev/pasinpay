@@ -1,6 +1,6 @@
 import { trpcServer } from "@hono/trpc-server";
 import { appRouter } from "@pasinpay/api/routers/index";
-import { assertUsdGToken, escrowAbi } from "@pasinpay/chain";
+import { assertUsdGToken, supportsX402Funding } from "@pasinpay/chain";
 import { sql } from "drizzle-orm";
 import { initLogger } from "evlog";
 import {
@@ -109,16 +109,7 @@ app.get("/api/readiness", async (c) => {
 		}
 		let x402Adapter = false;
 		if (!/^0x0{40}$/i.test(chainConfig.escrowAddress)) {
-			try {
-				await publicClient.readContract({
-					address: chainConfig.escrowAddress,
-					abi: escrowAbi,
-					functionName: "totalEscrowed",
-				});
-				x402Adapter = true;
-			} catch {
-				x402Adapter = false;
-			}
+			x402Adapter = await supportsX402Funding(publicClient, chainConfig);
 		}
 		const configuration = {
 			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),

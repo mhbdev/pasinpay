@@ -4,14 +4,15 @@ This checklist separates the free Arbitrum Sepolia testnet path from the value-b
 
 ## Arbitrum Sepolia deployment
 
-The initial testnet escrow deployment was completed on 2026-10-03:
+The current x402-capable testnet escrow deployment was completed on 2026-10-10:
 
 - Chain: Arbitrum Sepolia (`421614`)
-- Escrow: `0x19B6944FB4748831D1B8462dDbD53F32655E1AF7`
-- Deployment transaction: `0xd78363181ba5e590b508904664c7b67503ffe443281c117d7a10efcf02b1ea61`
+- Escrow: `0x3591645C5DBfa67FC18B32b3f13d65f22d87d75D`
+- Deployment block: `317782125`
+- Deployment transaction: `0x595376e31367fc1c85fa047eda4108330f0a6ed4035b825ee3b3a96c97db527d`
 - USDG: `0xFFC95faa3d63Cde504a05B567C600B78C0b41892` (`USDG`, 6 decimals)
 
-The deployment was verified by reading the deployed bytecode and constructor-configured USDG, attestor, owner, and `nextBountyId` values from the chain. The owner is currently the testnet deployment owner account; transfer ownership to a Safe before any value-bearing production deployment.
+The previous Sepolia escrow deployment at `0x19B6944FB4748831D1B8462dDbD53F32655E1AF7` predates the x402 adapter and must not be configured for x402 funding. The current address is the adapter deployment. The owner is a testnet deployment account; transfer ownership to a Safe before any value-bearing mainnet deployment.
 
 ## Required application configuration
 
@@ -48,10 +49,14 @@ Repository choices are read from the GitHub App installation. A client cannot re
 - Managed TLS Postgres `DATABASE_URL`, with backups and connection limits
 - RPC URLs for Arbitrum Sepolia and Arbitrum One
 - `PASINPAY_ATTESTOR_PRIVATE_KEY`: a dedicated server-side signer, never a deployer or user wallet
+- `PASINPAY_X402_RELAYER_PRIVATE_KEY`: a dedicated Arbitrum Sepolia gas payer for hosted x402 settlement. Fund it with testnet ETH and monitor its balance; it cannot authorize or transfer a user's USDG.
 - One verified escrow address per enabled chain:
-  - `PASINPAY_SEPOLIA_ESCROW_ADDRESS`
+  - `PASINPAY_SEPOLIA_ESCROW_ADDRESS=0x3591645C5DBfa67FC18B32b3f13d65f22d87d75D`
   - `PASINPAY_MAINNET_ESCROW_ADDRESS`
-- Matching USDG addresses are already configured in the chain package and must be verified onchain at startup
+- `PASINPAY_SEPOLIA_USDG_ADDRESS=0xFFC95faa3d63Cde504a05B567C600B78C0b41892`
+- Set `PASINPAY_CHAIN_ID=421614` and `PASINPAY_ESCROW_DEPLOYMENT_BLOCK=317782125` for the current hosted testnet deployment. The recovery block must match the deployment block of the escrow configured for the active chain.
+- Configure the web build with `NEXT_PUBLIC_CHAIN_ID=421614`, `NEXT_PUBLIC_SEPOLIA_ESCROW_ADDRESS`, and `NEXT_PUBLIC_SEPOLIA_USDG_ADDRESS` matching the API. Keep the mainnet escrow unset/zero; Arbitrum One is disabled in the UI and x402 API until reviewed and deployed.
+- Matching USDG addresses are verified onchain at startup. x402 readiness probes the escrow's x402 nonce interface and USDG's EIP-3009 authorization-state interface before enabling Sepolia funding.
 - A Safe/multisig owner address for each deployed escrow; transfer contract ownership after deployment
 
 ### Contract deployment inputs
@@ -91,6 +96,8 @@ Arbitrum One is supported by configuration, but it requires real ETH for gas and
 - [ ] Webhook HMAC validation rejects invalid signatures and duplicate deliveries
 - [ ] Database migrations are applied before API/worker traffic
 - [ ] Readiness reports database, RPC, GitHub configuration, and escrow configuration
+- [ ] Hosted Sepolia x402 readiness reports `configuration.x402Sepolia: true`; API/web chain IDs, escrow and token addresses, and recovery block match the current deployment
+- [ ] A signed x402 acceptance payment funds one test bounty; a replay returns the same receipt without funding twice; delayed settlement recovery reconciles after the authorization expires
 - [ ] Worker reconciliation has a durable cursor and starts from the deployed chain block
 - [ ] Attestor key is separate from deployer and owner keys
 - [ ] Owner is transferred to a Safe/multisig

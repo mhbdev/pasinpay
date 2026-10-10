@@ -134,6 +134,16 @@ export const escrowAbi = [
 	},
 	{
 		type: "function",
+		name: "usedX402Nonces",
+		stateMutability: "view",
+		inputs: [
+			{ name: "payer", type: "address" },
+			{ name: "nonce", type: "bytes32" },
+		],
+		outputs: [{ name: "", type: "bool" }],
+	},
+	{
+		type: "function",
 		name: "feeBps",
 		stateMutability: "view",
 		inputs: [],
