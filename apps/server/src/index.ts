@@ -69,6 +69,18 @@ app.use(
 app.on(["POST", "GET"], "/api/auth/*", async (c) => auth.handler(c.req.raw));
 app.route("/api/github/webhook", githubWebhook);
 app.route("/api/x402", x402Routes);
+const mcpResourceMetadata = {
+	resource: new URL("/mcp", ENV.BETTER_AUTH_URL).toString(),
+	authorization_servers: [new URL("/api/auth", ENV.BETTER_AUTH_URL).toString()],
+	scopes_supported: ["bounties:read", "bounties:write"],
+	bearer_methods_supported: ["header"],
+};
+app.get("/.well-known/oauth-protected-resource", (c) =>
+	c.json(mcpResourceMetadata, 200, { "Cache-Control": "public, max-age=300" }),
+);
+app.get("/.well-known/oauth-protected-resource/mcp", (c) =>
+	c.json(mcpResourceMetadata, 200, { "Cache-Control": "public, max-age=300" }),
+);
 app.on(["GET", "POST", "DELETE"], "/mcp", async (c) => {
 	const origin = c.req.header("Origin");
 	if (origin && origin !== ENV.CORS_ORIGIN) {
