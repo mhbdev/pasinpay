@@ -19,7 +19,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ENV } from "../env.server";
-import { hashX402Payment } from "../lib/x402-payment";
+import { hashX402Payment, isValidX402BountyId } from "../lib/x402-payment";
 import { chain, chainConfig, db, publicClient } from "../services";
 
 const app = new Hono();
@@ -133,6 +133,9 @@ function readPaymentHeader(raw: string) {
 
 app.get("/bounties/:id/funding", async (c) => {
 	const id = c.req.param("id");
+	if (!isValidX402BountyId(id)) {
+		return c.json({ error: "An open on-chain bounty was not found." }, 404);
+	}
 	const [row] = await db
 		.select({
 			id: bounty.id,
@@ -206,6 +209,9 @@ app.get("/bounties/:id/funding", async (c) => {
 
 app.post("/bounties/:id/fund", async (c) => {
 	const id = c.req.param("id");
+	if (!isValidX402BountyId(id)) {
+		return c.json({ error: "An open on-chain bounty was not found." }, 404);
+	}
 	const [row] = await db
 		.select({
 			id: bounty.id,

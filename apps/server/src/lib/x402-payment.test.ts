@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { hashX402Payment } from "./x402-payment";
+import { hashX402Payment, isValidX402BountyId } from "./x402-payment";
 
 const payment = {
 	resource: "https://api.pasinpay.test/api/x402/bounties/id/fund",
@@ -34,4 +34,12 @@ test("x402 payment identity is bound to bounty, amount, and signatures", () => {
 			fundingIntentSignature: `0x${"d".repeat(130)}`,
 		}),
 	).not.toBe(baseline);
+});
+
+test("x402 endpoints only accept UUID bounty identifiers", () => {
+	expect(isValidX402BountyId("ba6545b0-a7a6-4bd7-a8f0-0cbc670475a8")).toBe(
+		true,
+	);
+	expect(isValidX402BountyId("not-a-uuid")).toBe(false);
+	expect(isValidX402BountyId("1 OR 1=1")).toBe(false);
 });
