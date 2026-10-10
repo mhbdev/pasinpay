@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { hashX402Payment, isValidX402BountyId } from "./x402-payment";
+import {
+	hashX402Payment,
+	isValidX402BountyId,
+	isX402AuthorizationWindowCurrent,
+} from "./x402-payment";
 
 const payment = {
 	resource: "https://api.pasinpay.test/api/x402/bounties/id/fund",
@@ -42,4 +46,18 @@ test("x402 endpoints only accept UUID bounty identifiers", () => {
 	);
 	expect(isValidX402BountyId("not-a-uuid")).toBe(false);
 	expect(isValidX402BountyId("1 OR 1=1")).toBe(false);
+});
+
+test("x402 retries settle new transfers only within the authorization window", () => {
+	const now = 1_800_000_000n;
+	expect(isX402AuthorizationWindowCurrent(now - 1n, now + 300n, now)).toBe(
+		true,
+	);
+	expect(isX402AuthorizationWindowCurrent(now - 1n, now, now)).toBe(false);
+	expect(isX402AuthorizationWindowCurrent(now + 1n, now + 300n, now)).toBe(
+		false,
+	);
+	expect(isX402AuthorizationWindowCurrent(now - 1n, now + 301n, now)).toBe(
+		false,
+	);
 });

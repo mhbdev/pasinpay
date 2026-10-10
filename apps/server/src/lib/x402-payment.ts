@@ -7,6 +7,14 @@ export function isValidX402BountyId(value: string) {
 	return bountyIdPattern.test(value);
 }
 
+export function isX402AuthorizationWindowCurrent(
+	validAfter: bigint,
+	validBefore: bigint,
+	now: bigint,
+) {
+	return validAfter <= now && validBefore > now && validBefore - now <= 300n;
+}
+
 type X402PaymentIdentity = {
 	resource: string;
 	bountyId: string;

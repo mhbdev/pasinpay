@@ -19,7 +19,11 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ENV } from "../env.server";
-import { hashX402Payment, isValidX402BountyId } from "../lib/x402-payment";
+import {
+	hashX402Payment,
+	isValidX402BountyId,
+	isX402AuthorizationWindowCurrent,
+} from "../lib/x402-payment";
 import { chain, chainConfig, db, publicClient } from "../services";
 
 const app = new Hono();
@@ -348,14 +352,16 @@ app.post("/bounties/:id/fund", async (c) => {
 		authorizationValue !== totalAmount ||
 		getAddress(authorization.from) !== getAddress(row.creatorWallet) ||
 		getAddress(authorization.to) !== getAddress(chainConfig.escrowAddress) ||
-		!/^0x[0-9a-fA-F]{64}$/.test(authorizationNonce) ||
-		validAfter > now ||
-		validBefore <= now ||
-		validBefore - now > 300n
+		!/^0x[0-9a-fA-F]{64}$/.test(authorizationNonce)
 	)
 		return fallback(
-			"The payer, amount, recipient, or authorization window is invalid.",
+			"The payer, amount, recipient, or authorization is invalid.",
 		);
+	const authorizationWindowIsCurrent = isX402AuthorizationWindowCurrent(
+		validAfter,
+		validBefore,
+		now,
+	);
 
 	const intentDeadline = validBefore;
 	const authorizationHash = keccak256(
@@ -615,8 +621,23 @@ app.post("/bounties/:id/fund", async (c) => {
 		} catch {
 			return c.json({ status: "settlement_pending" }, 202);
 		}
+		// A previously accepted payment can outlive its EIP-3009 authorization while
+		// the relayer broadcast is uncertain. Reconcile its event before considering
+		// a new broadcast, and never retry a stale authorization on chain.
+		if (!authorizationWindowIsCurrent) {
+			return c.json({ status: "settlement_pending" }, 202);
+		}
 	}
 	if (existing?.status === "failed") {
+		if (!authorizationWindowIsCurrent) {
+			return c.json(
+				{
+					error:
+						"This payment authorization expired before settlement. Request a new quote and approve the payment again.",
+				},
+				409,
+			);
+		}
 		const [claimed] = await db
 			.update(x402FundingPayment)
 			.set({
@@ -637,6 +658,11 @@ app.post("/bounties/:id/fund", async (c) => {
 		canSubmitSettlement = true;
 	}
 	if (!existing) {
+		if (!authorizationWindowIsCurrent) {
+			return fallback(
+				"The payment authorization expired. Request a new quote and approve the payment again.",
+			);
+		}
 		if (row.status !== "Open") {
 			return c.json({ error: "This bounty has already been funded." }, 409);
 		}
