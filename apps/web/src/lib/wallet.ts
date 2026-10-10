@@ -1,4 +1,4 @@
-import type { ChainConfig } from "@pasinpay/chain";
+import { type ChainConfig, DEFAULT_CHAIN_CONFIG } from "@pasinpay/chain";
 import { http } from "viem";
 import { arbitrum, arbitrumSepolia } from "viem/chains";
 import { createConfig } from "wagmi";
@@ -26,7 +26,8 @@ export const webChainConfigs: Record<WebChainId, ChainConfig> = {
 		name: "Arbitrum Sepolia",
 		escrowAddress: configuredAddress(
 			process.env.NEXT_PUBLIC_SEPOLIA_ESCROW_ADDRESS ??
-				process.env.NEXT_PUBLIC_ESCROW_ADDRESS,
+				process.env.NEXT_PUBLIC_ESCROW_ADDRESS ??
+				DEFAULT_CHAIN_CONFIG.escrowAddress,
 		),
 		usdgAddress: configuredAddress(
 			process.env.NEXT_PUBLIC_SEPOLIA_USDG_ADDRESS ??

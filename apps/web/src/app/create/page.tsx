@@ -37,12 +37,20 @@ import {
 	WalletCards,
 } from "lucide-react";
 import Link from "next/link";
-import { useDeferredValue, useState } from "react";
-import { formatUnits, parseEventLogs, parseUnits } from "viem";
+import { useDeferredValue, useEffect, useState } from "react";
+import {
+	encodeAbiParameters,
+	formatUnits,
+	keccak256,
+	parseEventLogs,
+	parseUnits,
+	stringToHex,
+} from "viem";
 import {
 	useAccount,
 	usePublicClient,
 	useReadContract,
+	useSignTypedData,
 	useSwitchChain,
 	useWriteContract,
 } from "wagmi";
@@ -86,12 +94,27 @@ export default function CreateBountyPage() {
 	const [step, setStep] = useState<
 		"idle" | "creating" | "approving" | "funding"
 	>("idle");
+	useEffect(() => {
+		const params = new URLSearchParams(window.location.search);
+		if (params.get("mcp") !== "1") return;
+		setRepository(params.get("repository") ?? "");
+		setIssueNumber(params.get("issueNumber") ?? "");
+		setTitle(params.get("title") ?? "");
+		setAmount(params.get("rewardUsd") ?? "");
+		const requestedDeadline = params.get("deadline");
+		if (requestedDeadline) {
+			const parsed = new Date(requestedDeadline);
+			if (!Number.isNaN(parsed.getTime()))
+				setDeadline(parsed.toISOString().slice(0, 16));
+		}
+	}, []);
 	const { data: session, isPending: sessionPending } = authClient.useSession();
 	const { address, chainId } = useAccount();
 	const { chainConfig } = useAppNetwork();
 	const { switchChainAsync } = useSwitchChain();
 	const client = usePublicClient({ chainId: chainConfig.id });
 	const { writeContractAsync } = useWriteContract();
+	const { signTypedDataAsync } = useSignTypedData();
 	const { data: decimals } = useReadContract({
 		address: chainConfig.usdgAddress,
 		abi: erc20MetadataAbi,
@@ -271,27 +294,227 @@ export default function CreateBountyPage() {
 				deadline: new Date(Number(deadlineSeconds) * 1000),
 				reviewWindowSeconds: 60,
 			});
-			setStep("approving");
-			const approvalHash = await writeWithFreshEip1559Fees(client, (fees) =>
-				writeContractAsync({
-					address: chainConfig.usdgAddress,
-					abi: erc20ApproveAbi,
-					functionName: "approve",
-					args: [chainConfig.escrowAddress, totalFunded],
-					...fees,
-				}),
-			);
-			await client.waitForTransactionReceipt({ hash: approvalHash });
-			setStep("funding");
-			const fundingHash = await writeWithFreshEip1559Fees(client, (fees) =>
-				writeContractAsync({
-					address: chainConfig.escrowAddress,
-					abi: escrowAbi,
-					functionName: "fundBounty",
-					args: [created.args.bountyId, rawAmount],
-					...fees,
-				}),
-			);
+			let fundingHash: `0x${string}`;
+			if (chainConfig.id === 421614) {
+				setStep("approving");
+				const serverUrl = (process.env.NEXT_PUBLIC_SERVER_URL ?? "").replace(
+					/\/$/,
+					"",
+				);
+				const fundUrl = `${serverUrl}/api/x402/bounties/${registered.id}/fund`;
+				const quoteResponse = await fetch(`${fundUrl}ing`, {
+					cache: "no-store",
+				});
+				if (quoteResponse.status !== 402) {
+					const quoteError = (await quoteResponse.json().catch(() => null)) as {
+						error?: string;
+					} | null;
+					throw new Error(
+						quoteError?.error ??
+							"The Arbitrum Sepolia x402 quote is unavailable.",
+					);
+				}
+				const quote = (await quoteResponse.json()) as {
+					x402Version: number;
+					resource: { url: string };
+					accepts: Array<{
+						scheme: string;
+						network: string;
+						amount: string;
+						asset: `0x${string}`;
+						payTo: `0x${string}`;
+						maxTimeoutSeconds: number;
+						extra: Record<string, unknown>;
+					}>;
+				};
+				const accepted = quote.accepts[0];
+				if (
+					quote.x402Version !== 2 ||
+					accepted?.scheme !== "exact" ||
+					accepted.network !== `eip155:${chainConfig.id}` ||
+					accepted.asset.toLowerCase() !==
+						chainConfig.usdgAddress.toLowerCase() ||
+					accepted.payTo.toLowerCase() !==
+						chainConfig.escrowAddress.toLowerCase() ||
+					BigInt(accepted.amount) !== totalFunded
+				) {
+					throw new Error("The x402 quote does not match this bounty.");
+				}
+
+				const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+				const validAfter = nowSeconds - BigInt(1);
+				const validBefore = nowSeconds + BigInt(accepted.maxTimeoutSeconds);
+				const authorizationNonce = keccak256(stringToHex(crypto.randomUUID()));
+				const authorization = {
+					from: address,
+					to: chainConfig.escrowAddress,
+					value: totalFunded,
+					validAfter,
+					validBefore,
+					nonce: authorizationNonce,
+				};
+				const authorizationTypes = {
+					TransferWithAuthorization: [
+						{ name: "from", type: "address" },
+						{ name: "to", type: "address" },
+						{ name: "value", type: "uint256" },
+						{ name: "validAfter", type: "uint256" },
+						{ name: "validBefore", type: "uint256" },
+						{ name: "nonce", type: "bytes32" },
+					],
+				} as const;
+				const authorizationSignature = await signTypedDataAsync({
+					domain: {
+						name: "Global Dollar",
+						version: "1",
+						chainId: chainConfig.id,
+						verifyingContract: chainConfig.usdgAddress,
+					},
+					types: authorizationTypes,
+					primaryType: "TransferWithAuthorization",
+					message: authorization,
+				});
+				const authorizationHash = keccak256(
+					encodeAbiParameters(
+						[
+							{ type: "address" },
+							{ type: "address" },
+							{ type: "uint256" },
+							{ type: "uint256" },
+							{ type: "uint256" },
+							{ type: "bytes32" },
+						],
+						[
+							address,
+							chainConfig.escrowAddress,
+							totalFunded,
+							validAfter,
+							validBefore,
+							authorizationNonce,
+						],
+					),
+				);
+				const intentDeadline = validBefore;
+				const intentTypes = {
+					X402Funding: [
+						{ name: "bountyId", type: "uint256" },
+						{ name: "payer", type: "address" },
+						{ name: "rewardAmount", type: "uint128" },
+						{ name: "feeAmount", type: "uint128" },
+						{ name: "authorizationHash", type: "bytes32" },
+						{ name: "intentDeadline", type: "uint64" },
+					],
+				} as const;
+				const intent = {
+					bountyId: created.args.bountyId,
+					payer: address,
+					rewardAmount: rawAmount,
+					feeAmount,
+					authorizationHash,
+					intentDeadline,
+				};
+				const fundingIntentSignature = await signTypedDataAsync({
+					domain: {
+						name: "PasinPay",
+						version: "1",
+						chainId: chainConfig.id,
+						verifyingContract: chainConfig.escrowAddress,
+					},
+					types: intentTypes,
+					primaryType: "X402Funding",
+					message: intent,
+				});
+				const paymentPayload = {
+					x402Version: quote.x402Version,
+					resource: { url: quote.resource.url },
+					accepted,
+					payload: {
+						signature: authorizationSignature,
+						authorization: {
+							from: authorization.from,
+							to: authorization.to,
+							value: authorization.value.toString(),
+							validAfter: authorization.validAfter.toString(),
+							validBefore: authorization.validBefore.toString(),
+							nonce: authorization.nonce,
+						},
+						fundingIntentSignature,
+					},
+				};
+				const encodedPayload = btoa(
+					String.fromCharCode(
+						...new TextEncoder().encode(JSON.stringify(paymentPayload)),
+					),
+				);
+				const settlementResponse = await fetch(fundUrl, {
+					method: "POST",
+					headers: { "PAYMENT-SIGNATURE": encodedPayload },
+					cache: "no-store",
+				});
+				const settlement = (await settlementResponse
+					.json()
+					.catch(() => null)) as {
+					error?: string;
+					status?: string;
+					transaction?: `0x${string}`;
+				} | null;
+				if (
+					settlementResponse.status === 503 &&
+					settlement?.error?.includes("relayer is not configured")
+				) {
+					// The wallet acts as the testnet relayer when the hosted relayer key
+					// has not been configured. The same signed x402 authorization is used.
+					setStep("funding");
+					fundingHash = await writeWithFreshEip1559Fees(client, (fees) =>
+						writeContractAsync({
+							address: chainConfig.escrowAddress,
+							abi: escrowAbi,
+							functionName: "fundBountyWithX402",
+							args: [
+								created.args.bountyId,
+								rawAmount,
+								validAfter,
+								validBefore,
+								authorizationNonce,
+								authorizationSignature,
+								intentDeadline,
+								fundingIntentSignature,
+							],
+							...fees,
+						}),
+					);
+				} else {
+					if (!settlementResponse.ok || !settlement?.transaction) {
+						throw new Error(
+							settlement?.error ??
+								"x402 settlement could not be confirmed. Retry from the bounty page.",
+						);
+					}
+					fundingHash = settlement.transaction;
+				}
+			} else {
+				setStep("approving");
+				const approvalHash = await writeWithFreshEip1559Fees(client, (fees) =>
+					writeContractAsync({
+						address: chainConfig.usdgAddress,
+						abi: erc20ApproveAbi,
+						functionName: "approve",
+						args: [chainConfig.escrowAddress, totalFunded],
+						...fees,
+					}),
+				);
+				await client.waitForTransactionReceipt({ hash: approvalHash });
+				setStep("funding");
+				fundingHash = await writeWithFreshEip1559Fees(client, (fees) =>
+					writeContractAsync({
+						address: chainConfig.escrowAddress,
+						abi: escrowAbi,
+						functionName: "fundBounty",
+						args: [created.args.bountyId, rawAmount],
+						...fees,
+					}),
+				);
+			}
 			await client.waitForTransactionReceipt({ hash: fundingHash });
 			await syncStatus.mutateAsync({
 				onchainBountyId: created.args.bountyId.toString(),

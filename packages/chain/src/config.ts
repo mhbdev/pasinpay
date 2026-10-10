@@ -15,11 +15,14 @@ export const USDG_ARBITRUM_SEPOLIA: Address = getAddress(
 export const USDG_ARBITRUM_MAINNET: Address = getAddress(
 	"0x004B506865409877C9fA29bfb1ebA929984B9bbC",
 );
+export const PASINPAY_ESCROW_ARBITRUM_SEPOLIA: Address = getAddress(
+	"0x3591645C5DBfa67FC18B32b3f13d65f22d87d75D",
+);
 
 export const DEFAULT_CHAIN_CONFIG: ChainConfig = {
 	id: ARBITRUM_SEPOLIA_ID,
 	name: "Arbitrum Sepolia",
-	escrowAddress: "0x0000000000000000000000000000000000000000",
+	escrowAddress: PASINPAY_ESCROW_ARBITRUM_SEPOLIA,
 	usdgAddress: USDG_ARBITRUM_SEPOLIA,
 	feeTreasury: "0x0000000000000000000000000000000000000000",
 	feeBps: 250,
@@ -71,7 +74,10 @@ export function chainConfigFromEnv(
 		id,
 		name: isSepolia ? "Arbitrum Sepolia" : "Arbitrum One",
 		escrowAddress: getAddress(
-			configuredEscrow ?? "0x0000000000000000000000000000000000000000",
+			configuredEscrow ??
+				(isSepolia
+					? PASINPAY_ESCROW_ARBITRUM_SEPOLIA
+					: "0x0000000000000000000000000000000000000000"),
 		),
 		usdgAddress: getAddress(
 			(isSepolia

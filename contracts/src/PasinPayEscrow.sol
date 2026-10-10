@@ -52,6 +52,12 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
     bytes32 private constant CLAIM_TYPEHASH = keccak256(
         "Claim(uint256 bountyId,bytes32 repositoryHash,uint32 issueNumber,uint256 prNumber,bytes32 commitHash,address recipient,uint64 expiresAt,uint256 nonce)"
     );
+    bytes32 private constant X402_FUNDING_TYPEHASH = keccak256(
+        "X402Funding(uint256 bountyId,address payer,uint128 rewardAmount,uint128 feeAmount,bytes32 authorizationHash,uint64 intentDeadline)"
+    );
+    bytes32 private constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
+        "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    );
 
     IERC20 public immutable USDG;
     address public attestor;
@@ -59,8 +65,10 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
     uint16 public feeBps;
     uint16 public constant MAX_FEE_BPS = 500;
     uint256 public nextBountyId = 1;
+    uint256 public totalEscrowed;
     mapping(uint256 => Bounty) public bounties;
     mapping(uint256 => mapping(uint256 => bool)) public usedNonces;
+    mapping(address => mapping(bytes32 => bool)) public usedX402Nonces;
 
     error InvalidStatus();
     error Unauthorized();
@@ -80,6 +88,9 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
     );
     event BountyCancelled(uint256 indexed bountyId);
     event BountyFunded(uint256 indexed bountyId, uint128 rewardAmount, uint128 feeAmount, uint128 totalAmount);
+    event X402BountyFunded(
+        uint256 indexed bountyId, address indexed payer, bytes32 indexed authorizationNonce, uint128 totalAmount
+    );
     event ClaimSubmitted(uint256 indexed bountyId, address indexed claimant, uint256 prNumber, bytes32 commitHash);
     event ClaimApproved(uint256 indexed bountyId);
     event ClaimDisputed(uint256 indexed bountyId);
@@ -143,8 +154,85 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         bounty.feeAmount = feeAmount;
         bounty.totalFunded = uint128(totalAmount);
         bounty.status = Status.Funded;
+        totalEscrowed += totalAmount;
         USDG.safeTransferFrom(msg.sender, address(this), totalAmount);
         emit BountyFunded(bountyId, rewardAmount, feeAmount, uint128(totalAmount));
+    }
+
+    /// @notice Funds an existing bounty with an x402-compatible EIP-3009 authorization.
+    /// @dev The second signature binds the otherwise bounty-agnostic token authorization
+    ///      to this bounty, amount, payer, and expiry. The token transfer and accounting
+    ///      update happen atomically, so an authorization cannot leave unallocated funds.
+    function fundBountyWithX402(
+        uint256 bountyId,
+        uint128 rewardAmount,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 authorizationNonce,
+        bytes calldata authorizationSignature,
+        uint64 intentDeadline,
+        bytes calldata intentSignature
+    ) external nonReentrant {
+        Bounty storage bounty = _bounty(bountyId);
+        if (
+            bounty.status != Status.Open || rewardAmount == 0 || block.timestamp >= bounty.deadline
+                || intentDeadline < block.timestamp || validAfter > block.timestamp || validBefore < block.timestamp
+                || validBefore > intentDeadline || usedX402Nonces[bounty.creator][authorizationNonce]
+        ) revert InvalidStatus();
+
+        uint128 feeAmount = calculateFee(rewardAmount);
+        uint256 totalAmount = uint256(rewardAmount) + feeAmount;
+        if (totalAmount > type(uint128).max) revert InvalidInput();
+        bytes32 authorizationHash = keccak256(
+            abi.encode(bounty.creator, address(this), totalAmount, validAfter, validBefore, authorizationNonce)
+        );
+        bytes32 intentDigest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    X402_FUNDING_TYPEHASH,
+                    bountyId,
+                    bounty.creator,
+                    rewardAmount,
+                    feeAmount,
+                    authorizationHash,
+                    intentDeadline
+                )
+            )
+        );
+        if (ECDSA.recover(intentDigest, intentSignature) != bounty.creator) revert InvalidSignature();
+
+        _validateX402Authorization(
+            bounty.creator,
+            uint128(totalAmount),
+            validAfter,
+            validBefore,
+            authorizationNonce,
+            authorizationSignature
+        );
+        usedX402Nonces[bounty.creator][authorizationNonce] = true;
+        if (!_authorizationUsed(bounty.creator, authorizationNonce)) {
+            _transferWithAuthorization(
+                bounty.creator,
+                uint128(totalAmount),
+                validAfter,
+                validBefore,
+                authorizationNonce,
+                authorizationSignature
+            );
+        } else if (USDG.balanceOf(address(this)) < totalEscrowed + totalAmount) {
+            // A standard x402 facilitator may have settled the EIP-3009 transfer first.
+            // Only attribute it when the exact signed authorization is consumed and the
+            // escrow has enough unallocated tokens to cover this bounty.
+            revert InvalidInput();
+        }
+
+        bounty.amount = rewardAmount;
+        bounty.feeAmount = feeAmount;
+        bounty.totalFunded = uint128(totalAmount);
+        bounty.status = Status.Funded;
+        totalEscrowed += totalAmount;
+        emit BountyFunded(bountyId, rewardAmount, feeAmount, uint128(totalAmount));
+        emit X402BountyFunded(bountyId, bounty.creator, authorizationNonce, uint128(totalAmount));
     }
 
     function submitClaim(
@@ -204,6 +292,7 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         if (bounty.status != Status.ClaimPending || !bounty.approved) revert InvalidStatus();
         if (block.timestamp < bounty.reviewEnds) revert ReviewWindowOpen();
         bounty.status = Status.Paid;
+        totalEscrowed -= bounty.totalFunded;
         USDG.safeTransfer(bounty.claimant, bounty.amount);
         emit BountyPaid(bountyId, bounty.claimant, bounty.amount);
         _payFee(bountyId, bounty.feeAmount);
@@ -225,6 +314,7 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         uint128 claimantAmount = uint128(uint256(bounty.amount) * claimantBps / 10_000);
         uint128 creatorAmount = bounty.amount - claimantAmount;
         bounty.status = claimantAmount > 0 ? Status.Paid : Status.Refunded;
+        totalEscrowed -= bounty.totalFunded;
         if (claimantAmount > 0) {
             USDG.safeTransfer(bounty.claimant, claimantAmount);
             emit BountyPaid(bountyId, bounty.claimant, claimantAmount);
@@ -246,6 +336,7 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
                 || block.timestamp <= bounty.deadline || bounty.approved
         ) revert InvalidStatus();
         bounty.status = Status.Refunded;
+        totalEscrowed -= bounty.totalFunded;
         USDG.safeTransfer(bounty.creator, bounty.totalFunded);
         emit BountyRefunded(bountyId, bounty.totalFunded);
     }
@@ -283,6 +374,90 @@ contract PasinPayEscrow is EIP712, Ownable2Step, ReentrancyGuard {
         if (feeAmount == 0) return;
         USDG.safeTransfer(feeTreasury, feeAmount);
         emit PlatformFeePaid(bountyId, feeTreasury, feeAmount);
+    }
+
+    function _transferWithAuthorization(
+        address from,
+        uint128 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        bytes calldata signature
+    ) internal {
+        if (signature.length != 65) revert InvalidSignature();
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+        if (v < 27) v += 27;
+        (bool success, bytes memory result) = address(USDG).call(
+            abi.encodeWithSignature(
+                "transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)",
+                from,
+                address(this),
+                uint256(value),
+                validAfter,
+                validBefore,
+                nonce,
+                v,
+                r,
+                s
+            )
+        );
+        if (!success) {
+            if (result.length > 0) assembly { revert(add(result, 32), mload(result)) }
+            revert InvalidSignature();
+        }
+    }
+
+    function _validateX402Authorization(
+        address from,
+        uint128 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        bytes calldata signature
+    ) internal view {
+        if (signature.length != 65) revert InvalidSignature();
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+        if (v < 27) v += 27;
+        (bool success, bytes memory result) = address(USDG).staticcall(
+            abi.encodeWithSignature("DOMAIN_SEPARATOR()")
+        );
+        if (!success || result.length != 32) revert InvalidSignature();
+        bytes32 tokenDomainSeparator = abi.decode(result, (bytes32));
+        bytes32 structHash = keccak256(
+            abi.encode(
+                TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
+                from,
+                address(this),
+                uint256(value),
+                validAfter,
+                validBefore,
+                nonce
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", tokenDomainSeparator, structHash));
+        if (ECDSA.recover(digest, v, r, s) != from) revert InvalidSignature();
+    }
+
+    function _authorizationUsed(address authorizer, bytes32 nonce) internal view returns (bool) {
+        (bool success, bytes memory result) = address(USDG).staticcall(
+            abi.encodeWithSignature("authorizationState(address,bytes32)", authorizer, nonce)
+        );
+        if (!success || result.length != 32) revert InvalidInput();
+        return abi.decode(result, (bool));
     }
 
     function _bounty(uint256 bountyId) internal view returns (Bounty storage bounty) {

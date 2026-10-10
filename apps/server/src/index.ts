@@ -1,6 +1,6 @@
 import { trpcServer } from "@hono/trpc-server";
 import { appRouter } from "@pasinpay/api/routers/index";
-import { assertUsdGToken } from "@pasinpay/chain";
+import { assertUsdGToken, escrowAbi } from "@pasinpay/chain";
 import { sql } from "drizzle-orm";
 import { initLogger } from "evlog";
 import {
@@ -15,6 +15,8 @@ import { createContext } from "./context";
 import { ENV } from "./env.server";
 import { assertAttestorMatchesContract } from "./lib/attestor";
 import { githubWebhook } from "./routes/github-webhook";
+import { mcpPost } from "./routes/mcp";
+import { x402Routes } from "./routes/x402";
 import { auth, chainConfig, db, publicClient } from "./services";
 
 initLogger({
@@ -47,14 +49,33 @@ app.use(
 	"/*",
 	cors({
 		origin: ENV.CORS_ORIGIN,
-		allowMethods: ["GET", "POST", "OPTIONS"],
-		allowHeaders: ["Content-Type", "Authorization"],
+		allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+		allowHeaders: [
+			"Content-Type",
+			"Authorization",
+			"Mcp-Protocol-Version",
+			"PAYMENT-SIGNATURE",
+		],
+		exposeHeaders: [
+			"WWW-Authenticate",
+			"Mcp-Protocol-Version",
+			"PAYMENT-REQUIRED",
+			"PAYMENT-RESPONSE",
+		],
 		credentials: true,
 	}),
 );
 
 app.on(["POST", "GET"], "/api/auth/*", async (c) => auth.handler(c.req.raw));
 app.route("/api/github/webhook", githubWebhook);
+app.route("/api/x402", x402Routes);
+app.on(["GET", "POST", "DELETE"], "/mcp", async (c) => {
+	const origin = c.req.header("Origin");
+	if (origin && origin !== ENV.CORS_ORIGIN) {
+		return c.json({ error: "Untrusted MCP origin." }, 403);
+	}
+	return mcpPost(c.req.raw);
+});
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "pasinpay-server" }));
 app.get("/api/readiness", async (c) => {
@@ -74,6 +95,19 @@ app.get("/api/readiness", async (c) => {
 				attestorMatchesContract = false;
 			}
 		}
+		let x402Adapter = false;
+		if (!/^0x0{40}$/i.test(chainConfig.escrowAddress)) {
+			try {
+				await publicClient.readContract({
+					address: chainConfig.escrowAddress,
+					abi: escrowAbi,
+					functionName: "totalEscrowed",
+				});
+				x402Adapter = true;
+			} catch {
+				x402Adapter = false;
+			}
+		}
 		const configuration = {
 			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),
 			githubApp: Boolean(
@@ -82,13 +116,19 @@ app.get("/api/readiness", async (c) => {
 					ENV.GITHUB_APP_PRIVATE_KEY &&
 					ENV.GITHUB_WEBHOOK_SECRET,
 			),
-			escrow: !/^0x0{40}$/i.test(ENV.PASINPAY_ESCROW_ADDRESS),
+			escrow: !/^0x0{40}$/i.test(chainConfig.escrowAddress),
 			attestor: Boolean(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY),
 			attestorMatchesContract,
+			x402Sepolia:
+				chainConfig.id === 421614 &&
+				x402Adapter &&
+				Boolean(ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY),
 		};
+		const { x402Sepolia, ...requiredConfiguration } = configuration;
 		if (
 			ENV.NODE_ENV === "production" &&
-			Object.values(configuration).some((configured) => !configured)
+			(Object.values(requiredConfiguration).some((configured) => !configured) ||
+				(chainConfig.id === 421614 && !x402Sepolia))
 		) {
 			return c.json(
 				{ ok: false, database: true, chain: true, token, configuration },
@@ -102,11 +142,11 @@ app.get("/api/readiness", async (c) => {
 			token,
 			configuration,
 		});
-	} catch (error) {
+	} catch {
 		return c.json(
 			{
 				ok: false,
-				error: error instanceof Error ? error.message : "not ready",
+				error: "Readiness checks failed.",
 			},
 			503,
 		);

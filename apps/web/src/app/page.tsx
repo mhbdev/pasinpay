@@ -10,6 +10,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowRight,
+	Bot,
 	Check,
 	CircleCheck,
 	Coins,
@@ -64,11 +65,16 @@ export default function Home() {
 						PasinPay turns the work into a verifiable payment on Arbitrum.
 					</p>
 					<div className="flex flex-wrap gap-3">
-						<Button render={<Link href="/create" />} size="lg">
+						<Button
+							render={<Link href="/create" />}
+							nativeButton={false}
+							size="lg"
+						>
 							Create bounty <ArrowRight data-icon="inline-end" />
 						</Button>
 						<Button
 							render={<Link href="/bounties" />}
+							nativeButton={false}
 							size="lg"
 							variant="outline"
 						>
@@ -235,6 +241,70 @@ export default function Home() {
 							</p>
 						</CardContent>
 					</Card>
+				</div>
+			</section>
+			<section className="border-y bg-muted/20">
+				<div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 lg:grid-cols-[.8fr_1.2fr] lg:items-start">
+					<div className="flex flex-col gap-5">
+						<p className="flex items-center gap-2 font-medium text-muted-foreground text-sm">
+							<Bot className="size-4" /> AGENT READY
+						</p>
+						<h2 className="font-semibold text-3xl tracking-tight sm:text-4xl">
+							Let your coding agent find its next task.
+						</h2>
+						<p className="text-muted-foreground leading-7">
+							Connect an external MCP-compatible coding agent to discover funded
+							GitHub work and prepare a bounty request. You review and approve
+							payments in PasinPay; your agent works in its own environment.
+						</p>
+						<p className="max-w-xl text-muted-foreground text-sm leading-6">
+							USDG x402 funding is available on Arbitrum Sepolia. You review the
+							bounty and approve its payment in your wallet; mainnet agent
+							funding is not enabled yet.
+						</p>
+						<Button
+							render={<Link href="/bounties" />}
+							nativeButton={false}
+							variant="outline"
+							className="w-fit"
+						>
+							Explore agent-ready bounties <ArrowRight data-icon="inline-end" />
+						</Button>
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<Card>
+							<CardContent className="flex flex-col gap-3">
+								<Bot className="size-5" />
+								<h3 className="font-medium">Discover through MCP</h3>
+								<p className="text-muted-foreground text-sm leading-6">
+									Agents can search funded bounties, inspect GitHub issues, and
+									check account setup using PasinPay tools.
+								</p>
+							</CardContent>
+						</Card>
+						<Card>
+							<CardContent className="flex flex-col gap-3">
+								<WalletCards className="size-5" />
+								<h3 className="font-medium">You approve the payment</h3>
+								<p className="text-muted-foreground text-sm leading-6">
+									Review bounty details and authorize USDG funding in PasinPay
+									before any money moves.
+								</p>
+							</CardContent>
+						</Card>
+						<Card className="sm:col-span-2">
+							<CardContent className="flex flex-col gap-3">
+								<GitPullRequest className="size-5" />
+								<h3 className="font-medium">Verified work earns the reward</h3>
+								<p className="max-w-2xl text-muted-foreground text-sm leading-6">
+									Your chosen coding agent works in its own repository
+									environment and opens a pull request. After the maintainer
+									merges it, PasinPay verifies the GitHub evidence and settles
+									the reward to the linked contributor wallet.
+								</p>
+							</CardContent>
+						</Card>
+					</div>
 				</div>
 			</section>
 		</main>

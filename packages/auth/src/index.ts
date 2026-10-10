@@ -1,7 +1,11 @@
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
+import { mcp } from "@better-auth/mcp";
 import type { Database } from "@pasinpay/db";
 import * as schema from "@pasinpay/db/schema/auth";
 import { betterAuth } from "better-auth";
+import { jwt } from "better-auth/plugins";
 
 export type AuthConfig = {
 	BETTER_AUTH_URL: string;
@@ -23,6 +27,20 @@ export function createAuth(
 			schema,
 		}),
 		trustedOrigins: [env.CORS_ORIGIN, ...desktopOrigins],
+		plugins: [
+			jwt(),
+			mcp({
+				loginPage: "/login",
+				consentPage: "/mcp/consent",
+				allowPublicClientPrelogin: true,
+				resource: new URL("/mcp", env.BETTER_AUTH_URL).toString(),
+				scopes: ["bounties:read", "bounties:write"],
+			}),
+			cimd({
+				fetchClientMetadataResource,
+				metadataProfile: "mcp-2026-07-28",
+			}),
+		],
 		socialProviders:
 			env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
 				? {

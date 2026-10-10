@@ -23,6 +23,22 @@ export const escrowAbi = [
 	},
 	{
 		type: "function",
+		name: "fundBountyWithX402",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "bountyId", type: "uint256" },
+			{ name: "rewardAmount", type: "uint128" },
+			{ name: "validAfter", type: "uint256" },
+			{ name: "validBefore", type: "uint256" },
+			{ name: "authorizationNonce", type: "bytes32" },
+			{ name: "authorizationSignature", type: "bytes" },
+			{ name: "intentDeadline", type: "uint64" },
+			{ name: "intentSignature", type: "bytes" },
+		],
+		outputs: [],
+	},
+	{
+		type: "function",
 		name: "submitClaim",
 		stateMutability: "nonpayable",
 		inputs: [
@@ -101,6 +117,20 @@ export const escrowAbi = [
 			{ name: "status", type: "uint8" },
 			{ name: "approved", type: "bool" },
 		],
+	},
+	{
+		type: "function",
+		name: "feeBps",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ name: "", type: "uint16" }],
+	},
+	{
+		type: "function",
+		name: "totalEscrowed",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ name: "", type: "uint256" }],
 	},
 	{
 		type: "function",

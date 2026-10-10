@@ -105,6 +105,32 @@ export const bounty = pgTable(
 	],
 );
 
+export const x402FundingPayment = pgTable(
+	"x402_funding_payment",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		bountyId: uuid("bounty_id")
+			.notNull()
+			.references(() => bounty.id, { onDelete: "cascade" }),
+		payerWallet: text("payer_wallet").notNull(),
+		authorizationNonce: text("authorization_nonce").notNull(),
+		payloadHash: text("payload_hash").notNull(),
+		status: text("status").notNull().default("pending"),
+		transactionHash: text("transaction_hash"),
+		lastError: text("last_error"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("x402_funding_nonce_idx").on(
+			table.payerWallet,
+			table.authorizationNonce,
+		),
+		index("x402_funding_bounty_idx").on(table.bountyId),
+		index("x402_funding_status_idx").on(table.status),
+	],
+);
+
 export const claim = pgTable(
 	"claim",
 	{
@@ -191,6 +217,7 @@ export const domainTables = {
 	repository,
 	bounty,
 	claim,
+	x402FundingPayment,
 	settlement,
 	webhookDelivery,
 	job,
