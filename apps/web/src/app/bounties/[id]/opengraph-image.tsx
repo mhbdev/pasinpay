@@ -34,9 +34,11 @@ export default async function OpenGraphImage({
 					{bounty?.title ?? "Fund verified GitHub work"}
 				</div>
 				<div style={{ color: "#666666", display: "flex", fontSize: 28 }}>
-					{bounty
-						? `${bounty.amount} USDG · ${bounty.repository} · Issue #${bounty.issueNumber}`
-						: "USDG escrow on Arbitrum"}
+					{bounty?.isPrivate
+						? `${bounty.amount} USDG · Private bounty`
+						: bounty
+							? `${bounty.amount} USDG · ${bounty.repository} · Issue #${bounty.issueNumber}`
+							: "USDG escrow on Arbitrum"}
 				</div>
 			</div>
 		</div>,

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import {
 	account,
 	bounty,
+	bountyJoinAttempt,
+	bountyParticipant,
 	claim,
 	githubInstallation,
 	repository,
@@ -10,6 +12,7 @@ import {
 	walletLink,
 	walletLinkChallenge,
 } from "@pasinpay/db/schema/index";
+import { TRPCError } from "@trpc/server";
 import {
 	and,
 	asc,
@@ -27,18 +30,43 @@ import { z } from "zod";
 
 import type { Context } from "../context";
 import { protectedProcedure, publicProcedure, router } from "../index";
+import {
+	createBountyAccessToken,
+	hashJoiningPassword,
+	verifyBountyAccessToken,
+	verifyJoiningPassword,
+} from "../lib/private-bounty";
 import { getPullRequestStatus } from "../lib/pull-request-status";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
 
 function serializeBounty(row: typeof bounty.$inferSelect) {
+	const { joiningPasswordSalt, joiningPasswordHash, ...safeRow } = row;
 	return {
-		...row,
+		...safeRow,
+		isPrivate: Boolean(joiningPasswordSalt || joiningPasswordHash),
 		amount: row.amount.toString(),
 		feeAmount: row.feeAmount.toString(),
 		totalFunded: row.totalFunded.toString(),
 		onchainBountyId: row.onchainBountyId?.toString() ?? null,
 	};
+}
+
+function hasBountyAccess(
+	ctx: Context,
+	row: typeof bounty.$inferSelect,
+	accessToken: string | undefined,
+) {
+	if (!row.joiningPasswordSalt && !row.joiningPasswordHash) return true;
+	if (!row.joiningPasswordSalt || !row.joiningPasswordHash) return false;
+	if (ctx.session?.user.id === row.userId) return true;
+	if (!ctx.session) return false;
+	return verifyBountyAccessToken(
+		accessToken,
+		ctx.accessTokenSecret,
+		ctx.session.user.id,
+		row.id,
+	);
 }
 
 async function authorizedInstallation(
@@ -117,6 +145,18 @@ export const bountyRouter = router({
 			)
 			.where(eq(githubInstallation.userId, ctx.session.user.id));
 	}),
+
+	repositoryPrivacy: protectedProcedure
+		.input(z.object({ repository: z.string().min(3).max(200) }))
+		.mutation(async ({ ctx, input }) => {
+			const installation = await authorizedInstallation(ctx, input.repository);
+			return {
+				isPrivate: await ctx.github.getRepositoryPrivacy(
+					installation.installationId,
+					installation.repository,
+				),
+			};
+		}),
 
 	issues: protectedProcedure
 		.input(
@@ -321,8 +361,14 @@ export const bountyRouter = router({
 				filters.push(
 					or(
 						ilike(bounty.title, query),
-						ilike(bounty.repository, query),
-						ilike(bounty.issueTitle, query),
+						and(
+							isNull(bounty.joiningPasswordSalt),
+							isNull(bounty.joiningPasswordHash),
+							or(
+								ilike(bounty.repository, query),
+								ilike(bounty.issueTitle, query),
+							),
+						),
 					),
 				);
 			}
@@ -356,18 +402,37 @@ export const bountyRouter = router({
 				ctx.db
 					.selectDistinct({ repository: bounty.repository })
 					.from(bounty)
+					.where(
+						and(
+							isNull(bounty.joiningPasswordHash),
+							isNull(bounty.joiningPasswordSalt),
+						),
+					)
 					.orderBy(asc(bounty.repository)),
 			]);
 			const total = Number(countRow[0]?.total ?? 0);
 
 			return {
-				items: rows.map((row) => ({
-					...serializeBounty(row.bounty),
-					creator: {
-						name: row.creatorName ?? "PasinPay creator",
-						image: row.creatorImage ?? null,
-					},
-				})),
+				items: rows.map((row) => {
+					const isPrivate = Boolean(
+						row.bounty.joiningPasswordSalt || row.bounty.joiningPasswordHash,
+					);
+					if (isPrivate)
+						return {
+							id: row.bounty.id,
+							title: row.bounty.title,
+							amount: row.bounty.amount.toString(),
+							isPrivate: true as const,
+						};
+					return {
+						...serializeBounty(row.bounty),
+						isPrivate: false as const,
+						creator: {
+							name: row.creatorName ?? "PasinPay creator",
+							image: row.creatorImage ?? null,
+						},
+					};
+				}),
 				total,
 				page: input.page,
 				pageSize: input.pageSize,
@@ -376,8 +441,113 @@ export const bountyRouter = router({
 			};
 		}),
 
+	join: protectedProcedure
+		.input(
+			z.object({
+				bountyId: z.string().uuid(),
+				password: z.string().min(1).max(128),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const [row] = await ctx.db
+				.select()
+				.from(bounty)
+				.where(eq(bounty.id, input.bountyId))
+				.limit(1);
+			if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+			if (!row.joiningPasswordSalt || !row.joiningPasswordHash)
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "This bounty does not require a joining password.",
+				});
+
+			const [githubAccount] = await ctx.db
+				.select({ accountId: account.accountId })
+				.from(account)
+				.where(
+					and(
+						eq(account.userId, ctx.session.user.id),
+						eq(account.providerId, "github"),
+					),
+				)
+				.limit(1);
+			if (!githubAccount)
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Link a GitHub account before joining this bounty.",
+				});
+
+			const windowStart = new Date(Date.now() - 15 * 60_000);
+			const [attempts] = await ctx.db
+				.select({ total: count() })
+				.from(bountyJoinAttempt)
+				.where(
+					and(
+						eq(bountyJoinAttempt.bountyId, row.id),
+						eq(bountyJoinAttempt.userId, ctx.session.user.id),
+						gt(bountyJoinAttempt.failedAt, windowStart),
+					),
+				);
+			if (Number(attempts?.total ?? 0) >= 5)
+				throw new TRPCError({
+					code: "TOO_MANY_REQUESTS",
+					message: "Too many incorrect passwords. Try again in 15 minutes.",
+				});
+			const valid = await verifyJoiningPassword(
+				input.password,
+				row.joiningPasswordSalt,
+				row.joiningPasswordHash,
+			);
+			if (!valid) {
+				await ctx.db.insert(bountyJoinAttempt).values({
+					bountyId: row.id,
+					userId: ctx.session.user.id,
+				});
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "The joining password is incorrect.",
+				});
+			}
+
+			await ctx.db
+				.insert(bountyParticipant)
+				.values({
+					bountyId: row.id,
+					userId: ctx.session.user.id,
+					githubAccountId: githubAccount.accountId,
+				})
+				.onConflictDoUpdate({
+					target: [bountyParticipant.bountyId, bountyParticipant.userId],
+					set: {
+						githubAccountId: githubAccount.accountId,
+						joinedAt: new Date(),
+					},
+				});
+			await ctx.db
+				.delete(bountyJoinAttempt)
+				.where(
+					and(
+						eq(bountyJoinAttempt.bountyId, row.id),
+						eq(bountyJoinAttempt.userId, ctx.session.user.id),
+					),
+				);
+			return {
+				accessToken: createBountyAccessToken(
+					ctx.accessTokenSecret,
+					ctx.session.user.id,
+					row.id,
+				),
+				expiresInSeconds: 15 * 60,
+			};
+		}),
+
 	getById: publicProcedure
-		.input(z.object({ id: z.string().uuid() }))
+		.input(
+			z.object({
+				id: z.string().uuid(),
+				accessToken: z.string().max(2_000).optional(),
+			}),
+		)
 		.query(async ({ ctx, input }) => {
 			const [row] = await ctx.db
 				.select()
@@ -385,6 +555,14 @@ export const bountyRouter = router({
 				.where(eq(bounty.id, input.id))
 				.limit(1);
 			if (!row) return null;
+			if (!hasBountyAccess(ctx, row, input.accessToken))
+				return {
+					isLocked: true as const,
+					isPrivate: true as const,
+					id: row.id,
+					title: row.title,
+					amount: row.amount.toString(),
+				};
 			const [creatorRow] = await ctx.db
 				.select({
 					name: user.name,
@@ -484,6 +662,7 @@ export const bountyRouter = router({
 			).size;
 			return {
 				...serializeBounty(row),
+				isLocked: false as const,
 				creator: {
 					name: creatorRow?.name ?? "PasinPay creator",
 					image: creatorRow?.image ?? null,
@@ -526,8 +705,24 @@ export const bountyRouter = router({
 		}),
 
 	claim: publicProcedure
-		.input(z.object({ bountyId: z.string().uuid() }))
+		.input(
+			z.object({
+				bountyId: z.string().uuid(),
+				accessToken: z.string().max(2_000).optional(),
+			}),
+		)
 		.query(async ({ ctx, input }) => {
+			const [bountyRow] = await ctx.db
+				.select()
+				.from(bounty)
+				.where(eq(bounty.id, input.bountyId))
+				.limit(1);
+			if (!bountyRow) return null;
+			if (!hasBountyAccess(ctx, bountyRow, input.accessToken))
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Join this private bounty to view claim details.",
+				});
 			const [row] = await ctx.db
 				.select()
 				.from(claim)
@@ -582,6 +777,7 @@ export const bountyRouter = router({
 				feeAmount: z.string().regex(/^\d+$/),
 				totalFunded: z.string().regex(/^\d+$/),
 				deadline: z.coerce.date(),
+				joiningPassword: z.string().min(12).max(128).optional(),
 				reviewWindowSeconds: z
 					.number()
 					.int()
@@ -604,7 +800,10 @@ export const bountyRouter = router({
 			)
 				throw new Error("Link this wallet before creating a bounty");
 			const [authorizedRepository] = await ctx.db
-				.select({ id: repository.id })
+				.select({
+					id: repository.id,
+					installationId: githubInstallation.installationId,
+				})
 				.from(repository)
 				.innerJoin(
 					githubInstallation,
@@ -619,9 +818,24 @@ export const bountyRouter = router({
 				.limit(1);
 			if (!authorizedRepository)
 				throw new Error("Select a repository installed through the GitHub App");
+			if (
+				input.joiningPassword &&
+				!(await ctx.github.getRepositoryPrivacy(
+					authorizedRepository.installationId,
+					input.repository,
+				))
+			)
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"Password protected bounties require a private GitHub repository.",
+				});
 			const rewardAmount = BigInt(input.amount);
 			const feeAmount = BigInt(input.feeAmount);
 			const totalFunded = BigInt(input.totalFunded);
+			const passwordHash = input.joiningPassword
+				? await hashJoiningPassword(input.joiningPassword)
+				: null;
 			const expectedFee =
 				(rewardAmount * BigInt(ctx.chain.feeBps)) / BigInt(10_000);
 			if (
@@ -647,6 +861,8 @@ export const bountyRouter = router({
 					issueTitle: input.issueTitle,
 					issueUrl: input.issueUrl,
 					creationMode: input.creationMode,
+					joiningPasswordSalt: passwordHash?.salt ?? null,
+					joiningPasswordHash: passwordHash?.hash ?? null,
 					title: input.title,
 					amount: rewardAmount,
 					feeAmount,
@@ -667,6 +883,8 @@ export const bountyRouter = router({
 						totalFunded,
 						escrowAddress: ctx.chain.escrowAddress,
 						status: "Open",
+						joiningPasswordSalt: passwordHash?.salt ?? null,
+						joiningPasswordHash: passwordHash?.hash ?? null,
 						updatedAt: new Date(),
 					},
 				})

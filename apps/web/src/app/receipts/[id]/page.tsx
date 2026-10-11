@@ -17,18 +17,40 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
+import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 export default function ReceiptPage() {
 	const { id } = useParams<{ id: string }>();
 	const { chainConfig } = useAppNetwork();
+	const { data: session, isPending: sessionPending } = authClient.useSession();
+	const [accessToken, setAccessToken] = useState<string>();
+	useEffect(() => {
+		setAccessToken(
+			sessionStorage.getItem(`pasinpay:bounty-access:${id}`) ?? undefined,
+		);
+	}, [id]);
+	useEffect(() => {
+		if (!sessionPending && !session) {
+			sessionStorage.removeItem(`pasinpay:bounty-access:${id}`);
+			setAccessToken(undefined);
+		}
+	}, [id, session, sessionPending]);
 	const { data: bounty, isLoading } = useQuery(
-		trpc.bounties.getById.queryOptions({ id }),
+		trpc.bounties.getById.queryOptions({ id, accessToken }),
 	);
 	const { data: claim } = useQuery(
-		trpc.bounties.claim.queryOptions({ bountyId: id }),
+		trpc.bounties.claim.queryOptions(
+			{ bountyId: id, accessToken },
+			{
+				enabled: Boolean(
+					bounty && !bounty.isLocked && (!bounty.isPrivate || session),
+				),
+			},
+		),
 	);
 	if (isLoading)
 		return (
@@ -39,6 +61,24 @@ export default function ReceiptPage() {
 	if (!bounty)
 		return (
 			<main className="mx-auto max-w-3xl px-5 py-16">Receipt not found.</main>
+		);
+	if (bounty.isLocked || (bounty.isPrivate && !session))
+		return (
+			<main className="mx-auto max-w-3xl px-5 py-16">
+				<Card>
+					<CardHeader>
+						<CardTitle>Private bounty receipt</CardTitle>
+						<p className="text-muted-foreground text-sm">
+							Join the bounty to view its receipt details.
+						</p>
+					</CardHeader>
+					<CardContent>
+						<Button render={<Link href={`/bounties/${id}`} />}>
+							Join bounty
+						</Button>
+					</CardContent>
+				</Card>
+			</main>
 		);
 	const evidence = claim?.evidence as
 		| {

@@ -24,6 +24,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@pasinpay/ui/components/select";
+import { Switch } from "@pasinpay/ui/components/switch";
 import { Textarea } from "@pasinpay/ui/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -86,6 +87,8 @@ export default function CreateBountyPage() {
 	const [issueUrl, setIssueUrl] = useState("");
 	const [issueSearch, setIssueSearch] = useState("");
 	const [issuePickerOpen, setIssuePickerOpen] = useState(false);
+	const [passwordProtection, setPasswordProtection] = useState(false);
+	const [joiningPassword, setJoiningPassword] = useState("");
 	const [amount, setAmount] = useState("");
 	const [deadline, setDeadline] = useState(() =>
 		new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16),
@@ -140,6 +143,9 @@ export default function CreateBountyPage() {
 		chainId: chainConfig.id,
 	});
 	const register = useMutation(trpc.bounties.register.mutationOptions());
+	const verifyRepositoryPrivacy = useMutation(
+		trpc.bounties.repositoryPrivacy.mutationOptions(),
+	);
 	const syncStatus = useMutation(trpc.bounties.syncStatus.mutationOptions());
 	const createIssue = useMutation(trpc.bounties.createIssue.mutationOptions());
 	const linkGitHubIssue = useMutation(
@@ -188,6 +194,10 @@ export default function CreateBountyPage() {
 			return "Select an open GitHub issue from the searchable list.";
 		if (creationMode === "new" && title.trim().length < 4)
 			return "New issue title must be at least 4 characters.";
+		if (passwordProtection && joiningPassword.length < 12)
+			return "Joining passwords must be at least 12 characters.";
+		if (passwordProtection && joiningPassword.length > 128)
+			return "Joining passwords must be no more than 128 characters.";
 		if (!amount || !/^\d+(\.\d{1,18})?$/.test(amount) || Number(amount) <= 0)
 			return "Enter a positive USDG reward amount.";
 		const deadlineDate = new Date(deadline);
@@ -237,6 +247,15 @@ export default function CreateBountyPage() {
 			);
 
 		try {
+			if (passwordProtection) {
+				const { isPrivate } = await verifyRepositoryPrivacy.mutateAsync({
+					repository,
+				});
+				if (!isPrivate)
+					throw new Error(
+						"Password protected bounties require a private GitHub repository.",
+					);
+			}
 			let finalIssueNumber = Number(issueNumber);
 			let finalIssueTitle = issueTitle || title.trim();
 			let finalIssueUrl = issueUrl;
@@ -295,6 +314,7 @@ export default function CreateBountyPage() {
 				totalFunded: totalFunded.toString(),
 				deadline: new Date(Number(deadlineSeconds) * 1000),
 				reviewWindowSeconds: 60,
+				...(passwordProtection ? { joiningPassword } : {}),
 			});
 			let fundingHash: `0x${string}`;
 			if (chainConfig.id === 421614) {
@@ -801,6 +821,44 @@ export default function CreateBountyPage() {
 							{error && <p className="text-destructive text-sm">{error}</p>}
 						</div>
 					</form>
+				</div>
+				<div className="flex flex-col gap-3 rounded-md border p-4 sm:col-span-2">
+					<div className="flex items-center justify-between gap-4">
+						<div>
+							<p className="font-medium text-sm">Password protected bounty</p>
+							<p className="mt-1 text-muted-foreground text-xs">
+								Only people who join with your password can view details or
+								qualify to claim.
+							</p>
+						</div>
+						<Switch
+							aria-label="Require a joining password"
+							checked={passwordProtection}
+							onCheckedChange={(checked) => {
+								setPasswordProtection(checked);
+								if (!checked) setJoiningPassword("");
+							}}
+						/>
+					</div>
+					{passwordProtection ? (
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="joining-password">Joining password</Label>
+							<Input
+								autoComplete="new-password"
+								id="joining-password"
+								maxLength={128}
+								minLength={12}
+								onChange={(event) => setJoiningPassword(event.target.value)}
+								placeholder="At least 12 characters"
+								type="password"
+								value={joiningPassword}
+							/>
+							<p className="text-muted-foreground text-xs">
+								Requires a private GitHub repository and a linked GitHub account
+								to join.
+							</p>
+						</div>
+					) : null}
 				</div>
 				<Card className="h-fit lg:sticky lg:top-8">
 					<CardHeader>

@@ -1,6 +1,7 @@
 import type { Context as ApiContext } from "@pasinpay/api/context";
 import type { Context as HonoContext } from "hono";
 
+import { ENV } from "./env.server";
 import { auth, chainConfig, db, githubService } from "./services";
 
 export type CreateContextOptions = {
@@ -18,6 +19,7 @@ export async function createContext({
 		session,
 		github: githubService,
 		chain: chainConfig,
+		accessTokenSecret: ENV.BETTER_AUTH_SECRET,
 	};
 }
 

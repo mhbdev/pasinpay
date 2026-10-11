@@ -26,6 +26,10 @@ export type GitHubService = {
 			updated_at: string;
 		}>
 	>;
+	getRepositoryPrivacy: (
+		installationId: string,
+		repository: string,
+	) => Promise<boolean>;
 	listRepositoryPullRequests: (
 		installationId: string,
 		repository: string,
@@ -69,4 +73,5 @@ export type Context = {
 	db: Database;
 	github: GitHubService;
 	chain: ChainConfig;
+	accessTokenSecret: string;
 };

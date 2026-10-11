@@ -9,12 +9,15 @@ The server exposes these tools:
 - `search_bounties` lists funded work.
 - `get_bounty` returns a bounty's public state.
 - `get_bounty_issue` loads the linked GitHub issue.
+- `join_bounty` joins a password protected bounty for the signed-in user after checking their joining password and linked GitHub identity.
 - `get_account_setup` reports the signed-in user's GitHub, repository, and payout-wallet setup.
 - `prepare_bounty_draft` validates a repository and open issue, then returns a PasinPay review URL. It does not create or fund a bounty.
 
 The token needs `bounties:read` to call the server. Preparing a draft also requires `bounties:write`. That scope only permits draft preparation; funding still happens in the authenticated PasinPay UI with a user wallet. The consent screen verifies Better Auth's signed OAuth query before showing the requested scopes. Draft requests are recorded in `mcp_audit_log`.
 
 Users can also create a scoped MCP API key from Settings. Keys are shown once, stored as hashes, expire after 90 days by default, and can be revoked. Send one as `Authorization: Bearer pp_live_…` to the MCP endpoint. A read-only key can discover and inspect bounties; enabling draft preparation adds `bounties:write` but still cannot create, fund, approve, or settle a bounty. Treat the key like a password and never commit it to a repository or agent prompt.
+
+Password protected bounties appear in search with only their title and reward. Call `join_bounty` with the bounty ID and password before using `get_bounty` or `get_bounty_issue`. Joining is recorded against the user's linked GitHub account; the repository owner must separately grant that account access to the private GitHub repository.
 
 Coding agents run in the user's chosen environment. They use their own repository permissions to change code and open pull requests. PasinPay does not run or host those agents. The existing GitHub merge evidence, claim attestation, and escrow payout process handles accepted work.
 

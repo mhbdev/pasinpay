@@ -35,6 +35,8 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@pasinpay/ui/components/dropdown-menu";
+import { Input } from "@pasinpay/ui/components/input";
+import { Label } from "@pasinpay/ui/components/label";
 import { Spinner } from "@pasinpay/ui/components/spinner";
 import {
 	Tooltip,
@@ -42,7 +44,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@pasinpay/ui/components/tooltip";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowUpRight,
 	Bot,
@@ -52,12 +54,13 @@ import {
 	ExternalLink,
 	GitPullRequest,
 	Info,
+	LockKeyhole,
 	Share2,
 	ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Address } from "viem";
 import {
@@ -70,6 +73,7 @@ import {
 import { CopyAddress } from "@/components/copy-address";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
+import { authClient } from "@/lib/auth-client";
 import {
 	getBountyProgress,
 	getCreatorActionAvailability,
@@ -218,11 +222,34 @@ function CreatorActionDialog({
 export default function BountyDetailPage() {
 	const params = useParams<{ id: string }>();
 	const id = params.id;
+	const [accessToken, setAccessToken] = useState<string>();
+	const [joiningPassword, setJoiningPassword] = useState("");
+	const [joinError, setJoinError] = useState<string | null>(null);
+	const { data: session, isPending: sessionPending } = authClient.useSession();
+	const join = useMutation(trpc.bounties.join.mutationOptions());
+	useEffect(() => {
+		setAccessToken(
+			sessionStorage.getItem(`pasinpay:bounty-access:${id}`) ?? undefined,
+		);
+	}, [id]);
+	useEffect(() => {
+		if (!sessionPending && !session) {
+			sessionStorage.removeItem(`pasinpay:bounty-access:${id}`);
+			setAccessToken(undefined);
+		}
+	}, [id, session, sessionPending]);
 	const { data: bounty, isLoading } = useQuery(
-		trpc.bounties.getById.queryOptions({ id }),
+		trpc.bounties.getById.queryOptions({ id, accessToken }),
 	);
 	const { data: claim } = useQuery(
-		trpc.bounties.claim.queryOptions({ bountyId: id }),
+		trpc.bounties.claim.queryOptions(
+			{ bountyId: id, accessToken },
+			{
+				enabled: Boolean(
+					bounty && !bounty.isLocked && (!bounty.isPrivate || session),
+				),
+			},
+		),
 	);
 	const { address, chainId } = useAccount();
 	const { chainConfig } = useAppNetwork();
@@ -230,7 +257,11 @@ export default function BountyDetailPage() {
 	const { switchChainAsync } = useSwitchChain();
 	const { writeContractAsync } = useWriteContract();
 	const queryClient = useQueryClient();
-	const bountyEscrowAddress = (bounty?.chain.escrowAddress ??
+	const fullBounty =
+		bounty && !bounty.isLocked && (!bounty.isPrivate || session)
+			? bounty
+			: undefined;
+	const bountyEscrowAddress = (fullBounty?.chain.escrowAddress ??
 		chainConfig.escrowAddress) as Address;
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -239,8 +270,8 @@ export default function BountyDetailPage() {
 		null,
 	);
 	const [transaction, setTransaction] = useState<TransactionState | null>(null);
-	const onchainBountyId = bounty?.onchainBountyId
-		? BigInt(bounty.onchainBountyId)
+	const onchainBountyId = fullBounty?.onchainBountyId
+		? BigInt(fullBounty.onchainBountyId)
 		: undefined;
 	const { data: onchainBounty, refetch: refetchOnchainBounty } =
 		useReadContract({
@@ -259,11 +290,30 @@ export default function BountyDetailPage() {
 	async function copyClaimTitle() {
 		try {
 			await navigator.clipboard.writeText(
-				`[PasinPay #${bounty?.issueNumber ?? ""}]`,
+				`[PasinPay #${fullBounty?.issueNumber ?? ""}]`,
 			);
 			toast.success("PR title marker copied");
 		} catch {
 			toast.error("Could not copy the PR title marker");
+		}
+	}
+
+	async function submitJoin(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		setJoinError(null);
+		try {
+			const result = await join.mutateAsync({
+				bountyId: id,
+				password: joiningPassword,
+			});
+			sessionStorage.setItem(
+				`pasinpay:bounty-access:${id}`,
+				result.accessToken,
+			);
+			setAccessToken(result.accessToken);
+			setJoiningPassword("");
+		} catch (cause) {
+			setJoinError(getReadableError(cause, "Could not join this bounty."));
 		}
 	}
 
@@ -295,6 +345,7 @@ export default function BountyDetailPage() {
 	}
 
 	async function call(functionName: BountyAction) {
+		const bounty = fullBounty;
 		if (!bounty?.onchainBountyId || !client || !address)
 			return setError("Connect the wallet used for this bounty first.");
 		const onchainBountyId = bounty.onchainBountyId;
@@ -432,10 +483,10 @@ export default function BountyDetailPage() {
 			}
 			await Promise.all([
 				queryClient.refetchQueries({
-					queryKey: trpc.bounties.getById.queryKey({ id }),
+					queryKey: trpc.bounties.getById.queryKey({ id, accessToken }),
 				}),
 				queryClient.refetchQueries({
-					queryKey: trpc.bounties.claim.queryKey({ bountyId: id }),
+					queryKey: trpc.bounties.claim.queryKey({ bountyId: id, accessToken }),
 				}),
 				refetchOnchainBounty(),
 			]);
@@ -469,6 +520,58 @@ export default function BountyDetailPage() {
 				<Link className="mt-4 inline-block underline" href="/bounties">
 					Back to bounties
 				</Link>
+			</main>
+		);
+	if (bounty.isLocked || (bounty.isPrivate && !session))
+		return (
+			<main className="mx-auto max-w-xl px-5 py-16">
+				<Card>
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<LockKeyhole className="size-5" /> Private bounty
+						</CardTitle>
+						<p className="text-muted-foreground text-sm">
+							{bounty.title} · {bounty.amount} USDG
+						</p>
+					</CardHeader>
+					<CardContent>
+						{sessionPending ? (
+							<p className="text-muted-foreground text-sm">
+								Checking your sign-in…
+							</p>
+						) : !session ? (
+							<div className="flex flex-col gap-3">
+								<p className="text-muted-foreground text-sm">
+									Sign in with GitHub before joining this private bounty.
+								</p>
+								<Button render={<Link href="/login" />}>Sign in to join</Button>
+							</div>
+						) : (
+							<form className="flex flex-col gap-4" onSubmit={submitJoin}>
+								<div className="flex flex-col gap-2">
+									<Label htmlFor="joining-password">Joining password</Label>
+									<Input
+										autoComplete="current-password"
+										id="joining-password"
+										maxLength={128}
+										onChange={(event) => setJoiningPassword(event.target.value)}
+										value={joiningPassword}
+										type="password"
+										required
+									/>
+								</div>
+								<Button type="submit" disabled={join.isPending}>
+									{join.isPending ? "Joining…" : "Join bounty"}
+								</Button>
+								{joinError ? (
+									<p role="alert" className="text-destructive text-sm">
+										{joinError}
+									</p>
+								) : null}
+							</form>
+						)}
+					</CardContent>
+				</Card>
 			</main>
 		);
 	const onchainStatus = onchainBounty

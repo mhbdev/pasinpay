@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { verifyJoiningPassword } from "@pasinpay/api/lib/private-bounty";
 import {
 	account,
 	apiKeyCredential,
 	bounty,
+	bountyJoinAttempt,
+	bountyParticipant,
 	githubInstallation,
 	mcpAuditLog,
 	repository,
@@ -29,6 +32,81 @@ function toolResult(value: unknown) {
 function makeServer(userId: string, scopes: string[]) {
 	const server = new McpServer({ name: "pasinpay", version: "1.0.0" });
 	server.registerTool(
+		"join_bounty",
+		{
+			description:
+				"Join a password protected bounty. Requires a linked GitHub account and the joining password.",
+			inputSchema: z.object({
+				bountyId: z.string().uuid(),
+				password: z.string().min(1).max(128),
+			}),
+		},
+		async ({ bountyId, password }) => {
+			const [row] = await db
+				.select()
+				.from(bounty)
+				.where(eq(bounty.id, bountyId))
+				.limit(1);
+			if (!row) return toolResult({ error: "Bounty not found" });
+			if (!row.joiningPasswordSalt || !row.joiningPasswordHash)
+				return toolResult({ error: "This bounty does not require a password" });
+			const [github] = await db
+				.select({ accountId: account.accountId })
+				.from(account)
+				.where(
+					and(eq(account.userId, userId), eq(account.providerId, "github")),
+				)
+				.limit(1);
+			if (!github)
+				return toolResult({ error: "Link a GitHub account before joining" });
+			const windowStart = new Date(Date.now() - 15 * 60_000);
+			const [attempts] = await db
+				.select({ total: sql<number>`count(*)::int` })
+				.from(bountyJoinAttempt)
+				.where(
+					and(
+						eq(bountyJoinAttempt.bountyId, row.id),
+						eq(bountyJoinAttempt.userId, userId),
+						gt(bountyJoinAttempt.failedAt, windowStart),
+					),
+				);
+			if ((attempts?.total ?? 0) >= 5)
+				return toolResult({
+					error: "Too many incorrect passwords. Try again in 15 minutes.",
+				});
+			if (
+				!(await verifyJoiningPassword(
+					password,
+					row.joiningPasswordSalt,
+					row.joiningPasswordHash,
+				))
+			) {
+				await db.insert(bountyJoinAttempt).values({ bountyId: row.id, userId });
+				return toolResult({ error: "The joining password is incorrect" });
+			}
+			await db
+				.insert(bountyParticipant)
+				.values({
+					bountyId: row.id,
+					userId,
+					githubAccountId: github.accountId,
+				})
+				.onConflictDoUpdate({
+					target: [bountyParticipant.bountyId, bountyParticipant.userId],
+					set: { githubAccountId: github.accountId, joinedAt: new Date() },
+				});
+			await db
+				.delete(bountyJoinAttempt)
+				.where(
+					and(
+						eq(bountyJoinAttempt.bountyId, row.id),
+						eq(bountyJoinAttempt.userId, userId),
+					),
+				);
+			return toolResult({ joined: true, bountyId: row.id });
+		},
+	);
+	server.registerTool(
 		"search_bounties",
 		{
 			description:
@@ -44,8 +122,11 @@ function makeServer(userId: string, scopes: string[]) {
 				const term = `%${query.trim()}%`;
 				const searchFilter = or(
 					ilike(bounty.title, term),
-					ilike(bounty.repository, term),
-					ilike(bounty.issueTitle, term),
+					and(
+						isNull(bounty.joiningPasswordSalt),
+						isNull(bounty.joiningPasswordHash),
+						or(ilike(bounty.repository, term), ilike(bounty.issueTitle, term)),
+					),
 				);
 				if (searchFilter) filters.push(searchFilter);
 			}
@@ -58,6 +139,8 @@ function makeServer(userId: string, scopes: string[]) {
 					issueTitle: bounty.issueTitle,
 					issueUrl: bounty.issueUrl,
 					amount: bounty.amount,
+					joiningPasswordSalt: bounty.joiningPasswordSalt,
+					joiningPasswordHash: bounty.joiningPasswordHash,
 					chainId: bounty.chainId,
 					deadline: bounty.deadline,
 				})
@@ -67,9 +150,25 @@ function makeServer(userId: string, scopes: string[]) {
 				.limit(limit);
 			return toolResult(
 				rows.map((row) => ({
-					...row,
-					amount: row.amount.toString(),
-					deadline: row.deadline.toISOString(),
+					...(row.joiningPasswordSalt || row.joiningPasswordHash
+						? {
+								id: row.id,
+								title: row.title,
+								amount: row.amount.toString(),
+								isPrivate: true,
+							}
+						: {
+								id: row.id,
+								title: row.title,
+								repository: row.repository,
+								issueNumber: row.issueNumber,
+								issueTitle: row.issueTitle,
+								issueUrl: row.issueUrl,
+								amount: row.amount.toString(),
+								chainId: row.chainId,
+								deadline: row.deadline.toISOString(),
+								isPrivate: false,
+							}),
 				})),
 			);
 		},
@@ -85,6 +184,7 @@ function makeServer(userId: string, scopes: string[]) {
 			const [row] = await db
 				.select({
 					id: bounty.id,
+					userId: bounty.userId,
 					title: bounty.title,
 					repository: bounty.repository,
 					issueNumber: bounty.issueNumber,
@@ -98,13 +198,40 @@ function makeServer(userId: string, scopes: string[]) {
 					deadline: bounty.deadline,
 					onchainBountyId: bounty.onchainBountyId,
 					createdAt: bounty.createdAt,
+					joiningPasswordSalt: bounty.joiningPasswordSalt,
+					joiningPasswordHash: bounty.joiningPasswordHash,
 				})
 				.from(bounty)
 				.where(eq(bounty.id, bountyId))
 				.limit(1);
 			if (!row) return toolResult({ error: "Bounty not found" });
+			if (
+				(row.joiningPasswordSalt || row.joiningPasswordHash) &&
+				row.userId !== userId
+			) {
+				const [participant] = await db
+					.select({ id: bountyParticipant.id })
+					.from(bountyParticipant)
+					.where(
+						and(
+							eq(bountyParticipant.bountyId, row.id),
+							eq(bountyParticipant.userId, userId),
+						),
+					)
+					.limit(1);
+				if (!participant)
+					return toolResult({
+						error: "Join this private bounty before viewing details",
+					});
+			}
+			const {
+				userId: _userId,
+				joiningPasswordSalt: _joiningPasswordSalt,
+				joiningPasswordHash: _joiningPasswordHash,
+				...publicRow
+			} = row;
 			return toolResult({
-				...row,
+				...publicRow,
 				amount: row.amount.toString(),
 				feeAmount: row.feeAmount.toString(),
 				totalFunded: row.totalFunded.toString(),
@@ -135,6 +262,25 @@ function makeServer(userId: string, scopes: string[]) {
 				return toolResult({
 					error: "Bounty or repository installation not found",
 				});
+			if (
+				(row.bounty.joiningPasswordSalt || row.bounty.joiningPasswordHash) &&
+				row.bounty.userId !== userId
+			) {
+				const [participant] = await db
+					.select({ id: bountyParticipant.id })
+					.from(bountyParticipant)
+					.where(
+						and(
+							eq(bountyParticipant.bountyId, row.bounty.id),
+							eq(bountyParticipant.userId, userId),
+						),
+					)
+					.limit(1);
+				if (!participant)
+					return toolResult({
+						error: "Join this private bounty before viewing its issue",
+					});
+			}
 			const issues = await githubService.listRepositoryIssues(
 				row.installationId,
 				row.bounty.repository,

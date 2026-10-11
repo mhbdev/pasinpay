@@ -35,6 +35,7 @@ import {
 	ChevronRight,
 	CircleDollarSign,
 	ListFilter,
+	LockKeyhole,
 	Search,
 	X,
 } from "lucide-react";
@@ -371,37 +372,52 @@ function BountiesContent() {
 									href={`/bounties/${item.id}`}
 									key={item.id}
 								>
-									<Avatar aria-hidden="true" size="sm">
-										{item.creator?.image ? (
-											<AvatarImage alt="" src={item.creator.image} />
-										) : null}
-										<AvatarFallback>
-											{(item.creator?.name ?? "PasinPay creator")
-												.slice(0, 2)
-												.toUpperCase()}
-										</AvatarFallback>
-									</Avatar>
+									{item.isPrivate ? (
+										<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+											<LockKeyhole aria-hidden="true" className="size-4" />
+										</div>
+									) : (
+										<Avatar aria-hidden="true" size="sm">
+											{item.creator.image ? (
+												<AvatarImage alt="" src={item.creator.image} />
+											) : null}
+											<AvatarFallback>
+												item.creator.name.slice(0, 2).toUpperCase()
+											</AvatarFallback>
+										</Avatar>
+									)}
 									<div className="min-w-0 flex-1">
 										<div className="flex flex-wrap items-center gap-2">
 											<p className="truncate font-medium">{item.title}</p>
-											<Badge variant={statusVariant(item.status)}>
-												{statusLabel(item.status)}
-											</Badge>
+											{item.isPrivate ? (
+												<Badge variant="outline">Private</Badge>
+											) : (
+												<Badge variant={statusVariant(item.status)}>
+													{statusLabel(item.status)}
+												</Badge>
+											)}
 										</div>
-										<p className="mt-1 truncate text-muted-foreground text-sm">
-											{item.repository} · Issue #{item.issueNumber}
-										</p>
+										{!item.isPrivate ? (
+											<p className="mt-1 truncate text-muted-foreground text-sm">
+												{item.repository} · Issue #{item.issueNumber}
+											</p>
+										) : null}
 									</div>
 									<div className="flex shrink-0 items-center gap-5">
 										<div className="text-right">
 											<UsdAmount amount={item.amount} className="font-medium" />
-											<p className="mt-1 text-muted-foreground text-xs">
-												{new Date(item.deadline).toLocaleDateString(undefined, {
-													month: "short",
-													day: "numeric",
-													year: "numeric",
-												})}
-											</p>
+											{!item.isPrivate ? (
+												<p className="mt-1 text-muted-foreground text-xs">
+													{new Date(item.deadline).toLocaleDateString(
+														undefined,
+														{
+															month: "short",
+															day: "numeric",
+															year: "numeric",
+														},
+													)}
+												</p>
+											) : null}
 										</div>
 										<ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
 									</div>

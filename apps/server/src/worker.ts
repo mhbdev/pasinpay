@@ -3,6 +3,7 @@ import { claimDigest, escrowAbi, verifyClaimSignature } from "@pasinpay/chain";
 import {
 	account,
 	bounty,
+	bountyParticipant,
 	chainCursor,
 	claim,
 	githubInstallation,
@@ -387,6 +388,20 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		throw new Error(
 			`GitHub user ${pr.user.login} is not linked to a PasinPay account`,
 		);
+	if (bountyRow.joiningPasswordSalt || bountyRow.joiningPasswordHash) {
+		const [participant] = await db
+			.select({ id: bountyParticipant.id })
+			.from(bountyParticipant)
+			.where(
+				and(
+					eq(bountyParticipant.bountyId, bountyRow.id),
+					eq(bountyParticipant.userId, githubAccount.userId),
+					eq(bountyParticipant.githubAccountId, String(pr.user.id)),
+				),
+			)
+			.limit(1);
+		if (!participant) return;
+	}
 	const [wallet] = await db
 		.select()
 		.from(walletLink)
@@ -564,12 +579,24 @@ async function reconcileGitHubClaims() {
 			`\\[PasinPay\\s+#${row.bounty.issueNumber}\\]`,
 			"i",
 		);
+		const participants =
+			row.bounty.joiningPasswordSalt || row.bounty.joiningPasswordHash
+				? await db
+						.select({ githubAccountId: bountyParticipant.githubAccountId })
+						.from(bountyParticipant)
+						.where(eq(bountyParticipant.bountyId, row.bounty.id))
+				: null;
 		const mergedPullRequest = pullRequests.find(
 			(pullRequest) =>
 				pullRequest.state === "closed" &&
 				Boolean(pullRequest.merged_at) &&
 				Boolean(pullRequest.merge_commit_sha) &&
-				marker.test(pullRequest.title),
+				marker.test(pullRequest.title) &&
+				(!participants ||
+					participants.some(
+						(participant) =>
+							participant.githubAccountId === String(pullRequest.user?.id),
+					)),
 		);
 		if (!mergedPullRequest?.user) continue;
 

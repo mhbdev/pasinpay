@@ -1,13 +1,10 @@
 export type PublicBounty = {
 	title: string;
-	repository: string;
 	amount: string;
-	feeAmount: string;
-	totalFunded: string;
-	status: string;
-	issueNumber: number;
-	issueTitle: string;
-	issueUrl: string;
+	isPrivate?: boolean;
+	isLocked?: boolean;
+	repository?: string;
+	issueNumber?: number;
 };
 
 export async function getPublicBounty(id: string) {

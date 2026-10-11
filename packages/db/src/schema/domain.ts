@@ -9,6 +9,7 @@ import {
 	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth";
 
 export const walletLinkChallenge = pgTable(
 	"wallet_link_challenge",
@@ -82,6 +83,8 @@ export const bounty = pgTable(
 		issueTitle: text("issue_title").notNull().default(""),
 		issueUrl: text("issue_url").notNull().default(""),
 		creationMode: text("creation_mode").notNull().default("existing"),
+		joiningPasswordSalt: text("joining_password_salt"),
+		joiningPasswordHash: text("joining_password_hash"),
 		title: text("title").notNull(),
 		amount: bigint("amount", { mode: "bigint" }).notNull(),
 		feeAmount: bigint("fee_amount", { mode: "bigint" })
@@ -107,6 +110,49 @@ export const bounty = pgTable(
 		),
 		index("bounty_creator_idx").on(table.creatorWallet),
 		index("bounty_status_idx").on(table.status),
+	],
+);
+
+export const bountyParticipant = pgTable(
+	"bounty_participant",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		bountyId: uuid("bounty_id")
+			.notNull()
+			.references(() => bounty.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		githubAccountId: text("github_account_id").notNull(),
+		joinedAt: timestamp("joined_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("bounty_participant_user_idx").on(table.bountyId, table.userId),
+		uniqueIndex("bounty_participant_github_idx").on(
+			table.bountyId,
+			table.githubAccountId,
+		),
+	],
+);
+
+export const bountyJoinAttempt = pgTable(
+	"bounty_join_attempt",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		bountyId: uuid("bounty_id")
+			.notNull()
+			.references(() => bounty.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		failedAt: timestamp("failed_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("bounty_join_attempt_user_idx").on(
+			table.bountyId,
+			table.userId,
+			table.failedAt,
+		),
 	],
 );
 
@@ -221,6 +267,8 @@ export const domainTables = {
 	githubInstallation,
 	repository,
 	bounty,
+	bountyParticipant,
+	bountyJoinAttempt,
 	claim,
 	x402FundingPayment,
 	settlement,

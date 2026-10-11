@@ -6,6 +6,7 @@ import { createPublicClient, http } from "viem";
 import { ENV } from "./env.server";
 import {
 	createIssue,
+	getRepositoryPrivacy,
 	linkIssue,
 	listAppInstallations,
 	listInstallationRepositories,
@@ -27,6 +28,7 @@ export const githubService = {
 	listAppInstallations,
 	listInstallationRepositories,
 	listRepositoryIssues,
+	getRepositoryPrivacy,
 	listRepositoryPullRequests,
 	createIssue,
 	linkIssue,

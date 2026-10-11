@@ -182,6 +182,18 @@ export async function listRepositoryIssues(
 		.slice(0, 50);
 }
 
+export async function getRepositoryPrivacy(
+	installationId: string,
+	repository: string,
+) {
+	const token = await createInstallationToken(installationId);
+	const result = await githubRequest<{ private: boolean }>(
+		`/repos/${repository}`,
+		token,
+	);
+	return result.private;
+}
+
 /**
  * Repository pull requests include open and closed work. The bounty API
  * applies the deterministic PasinPay title marker for the issue number, which
