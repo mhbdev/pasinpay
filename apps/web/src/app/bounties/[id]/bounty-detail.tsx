@@ -71,6 +71,7 @@ import {
 	useWriteContract,
 } from "wagmi";
 import { CopyAddress } from "@/components/copy-address";
+import { NetworkBadge } from "@/components/network-badge";
 import { useAppNetwork } from "@/components/network-provider";
 import { UsdAmount } from "@/components/usd-amount";
 import { authClient } from "@/lib/auth-client";
@@ -539,6 +540,7 @@ export default function BountyDetailPage() {
 						<CardTitle className="flex items-center gap-2">
 							<LockKeyhole className="size-5" /> Private bounty
 						</CardTitle>
+						<NetworkBadge chainId={bounty.chainId} />
 						<p className="text-muted-foreground text-sm">
 							{bounty.title} · {bounty.amount} {tokenSymbol}
 						</p>
@@ -672,7 +674,7 @@ export default function BountyDetailPage() {
 				: "Transaction reverted on-chain"
 		: null;
 	const transactionExplorerUrl = transaction?.hash
-		? `${chainConfig.explorerUrl}/tx/${transaction.hash}`
+		? `${bountyChainConfig.explorerUrl}/tx/${transaction.hash}`
 		: null;
 	/*
 	 * The server's indexed status may lag the receipt by a few seconds. The
@@ -721,6 +723,7 @@ export default function BountyDetailPage() {
 							<p className="text-muted-foreground">
 								Issue #{bounty.issueNumber} · {bounty.repository}
 							</p>
+							<NetworkBadge chainId={bounty.chain.id} />
 							<Badge variant={statusVariant(currentStatus)}>{status}</Badge>
 						</div>
 					</div>
@@ -829,19 +832,19 @@ export default function BountyDetailPage() {
 						<div>
 							<p className="text-muted-foreground text-xs">REWARD</p>
 							<p className="mt-1 font-medium">
-								<UsdAmount amount={bounty.amount} />
+								<UsdAmount amount={bounty.amount} chainConfig={chain} />
 							</p>
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">PLATFORM FEE</p>
 							<p className="mt-1 font-medium">
-								<UsdAmount amount={bounty.feeAmount} />
+								<UsdAmount amount={bounty.feeAmount} chainConfig={chain} />
 							</p>
 						</div>
 						<div>
 							<p className="text-muted-foreground text-xs">TOTAL FUNDED</p>
 							<p className="mt-1 font-medium">
-								<UsdAmount amount={bounty.totalFunded} />
+								<UsdAmount amount={bounty.totalFunded} chainConfig={chain} />
 							</p>
 						</div>
 						<div>
@@ -1084,7 +1087,7 @@ export default function BountyDetailPage() {
 					<CardHeader className="gap-4 border-b">
 						<p className="text-muted-foreground text-xs">BOUNTY REWARD</p>
 						<div className="font-semibold text-4xl tracking-tight">
-							<UsdAmount amount={bounty.amount} />
+							<UsdAmount amount={bounty.amount} chainConfig={chain} />
 						</div>
 						<p className="text-muted-foreground text-sm">
 							Deadline {new Date(bounty.deadline).toLocaleDateString()}

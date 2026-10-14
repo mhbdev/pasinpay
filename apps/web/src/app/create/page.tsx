@@ -572,6 +572,7 @@ export default function CreateBountyPage() {
 			await client.waitForTransactionReceipt({ hash: fundingHash });
 			await syncStatus.mutateAsync({
 				onchainBountyId: created.args.bountyId.toString(),
+				chainId: chainConfig.id,
 				status: "Funded",
 			});
 			try {

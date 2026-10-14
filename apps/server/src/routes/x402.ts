@@ -31,14 +31,9 @@ import {
 	isValidX402BountyId,
 	isX402AuthorizationWindowCurrent,
 } from "../lib/x402-payment";
-import { chain, chainConfig, db, publicClient } from "../services";
+import { type ChainRuntime, db, getChainRuntime } from "../services";
 
 const app = new Hono();
-const network = `eip155:${chainConfig.id}`;
-const tokenDomain = {
-	name: chainConfig.tokenEip712Name,
-	version: chainConfig.tokenEip712Version,
-} as const;
 const fundingTypes = {
 	X402Funding: [
 		{ name: "bountyId", type: "uint256" },
@@ -64,34 +59,41 @@ const x402FundedEvent = parseAbiItem(
 );
 const x402TestnetIds = [ARBITRUM_SEPOLIA_ID, ARC_TESTNET_ID] as const;
 
-function isX402Testnet() {
-	return x402TestnetIds.includes(
-		chainConfig.id as (typeof x402TestnetIds)[number],
-	);
+function isX402Testnet(chainId: number) {
+	return x402TestnetIds.includes(chainId as (typeof x402TestnetIds)[number]);
 }
 
-async function getArcGasOverrides() {
-	if (chainConfig.id !== ARC_MAINNET_ID && chainConfig.id !== ARC_TESTNET_ID) {
+async function getArcGasOverrides(runtime: ChainRuntime) {
+	if (
+		runtime.config.id !== ARC_MAINNET_ID &&
+		runtime.config.id !== ARC_TESTNET_ID
+	) {
 		return {};
 	}
 	const [block, estimate] = await Promise.all([
-		publicClient.getBlock({ blockTag: "latest" }),
-		publicClient.estimateFeesPerGas(),
+		runtime.publicClient.getBlock({ blockTag: "latest" }),
+		runtime.publicClient.estimateFeesPerGas(),
 	]);
 	return getEip1559FeeQuote(
-		chainConfig.id,
+		runtime.config.id,
 		block.baseFeePerGas ?? estimate.maxFeePerGas ?? BigInt(0),
 		estimate,
 	);
 }
 
-function requiredResponse(url: string, amount: string, error?: string) {
+function requiredResponse(
+	url: string,
+	amount: string,
+	runtime: ChainRuntime,
+	error?: string,
+) {
+	const network = `eip155:${runtime.config.id}`;
 	return {
 		x402Version: 2,
 		...(error ? { error } : {}),
 		resource: {
 			url,
-			description: `Fund this PasinPay GitHub bounty in ${chainConfig.tokenSymbol} escrow.`,
+			description: `Fund this PasinPay GitHub bounty in ${runtime.config.tokenSymbol} escrow.`,
 			mimeType: "application/json",
 		},
 		accepts: [
@@ -99,13 +101,13 @@ function requiredResponse(url: string, amount: string, error?: string) {
 				scheme: "exact",
 				network,
 				amount,
-				asset: chainConfig.tokenAddress,
-				payTo: chainConfig.escrowAddress,
+				asset: runtime.config.tokenAddress,
+				payTo: runtime.config.escrowAddress,
 				maxTimeoutSeconds: 300,
 				extra: {
 					assetTransferMethod: "eip3009",
-					name: tokenDomain.name,
-					version: tokenDomain.version,
+					name: runtime.config.tokenEip712Name,
+					version: runtime.config.tokenEip712Version,
 				},
 			},
 		],
@@ -117,14 +119,16 @@ function fundingIntentExtension(
 	payer: string,
 	rewardAmount: bigint,
 	feeAmount: bigint,
+	runtime: ChainRuntime,
 ) {
+	const config = runtime.config;
 	return {
 		"pasinpay-funding-intent": {
 			domain: {
 				name: "PasinPay",
 				version: "1",
-				chainId: chainConfig.id,
-				verifyingContract: chainConfig.escrowAddress,
+				chainId: config.id,
+				verifyingContract: config.escrowAddress,
 			},
 			primaryType: "X402Funding",
 			types: {
@@ -149,11 +153,12 @@ function paymentResponse(
 	transaction: string,
 	payer: string,
 	amount: string,
+	runtime: ChainRuntime,
 ) {
 	return {
 		success,
 		transaction,
-		network,
+		network: `eip155:${runtime.config.id}`,
 		payer,
 		amount,
 	};
@@ -168,12 +173,6 @@ function readPaymentHeader(raw: string) {
 }
 
 app.get("/bounties/:id/funding", async (c) => {
-	if (!isX402Testnet()) {
-		return c.json(
-			{ error: "x402 funding is enabled on supported testnets only." },
-			503,
-		);
-	}
 	const id = c.req.param("id");
 	if (!isValidX402BountyId(id)) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
@@ -193,6 +192,19 @@ app.get("/bounties/:id/funding", async (c) => {
 		.limit(1);
 	if (row?.status !== "Open" || !row.onchainBountyId) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
+	}
+	let runtime: ChainRuntime;
+	try {
+		runtime = getChainRuntime(row.chainId);
+	} catch {
+		return c.json({ error: "This bounty network is not configured." }, 503);
+	}
+	const { config: chainConfig, publicClient } = runtime;
+	if (!isX402Testnet(chainConfig.id)) {
+		return c.json(
+			{ error: "x402 funding is enabled on supported testnets only." },
+			503,
+		);
 	}
 	if (
 		row.escrowAddress &&
@@ -234,12 +246,13 @@ app.get("/bounties/:id/funding", async (c) => {
 		});
 		const feeAmount = (row.amount * BigInt(feeBps)) / 10_000n;
 		const requirement = {
-			...requiredResponse(url, (row.amount + feeAmount).toString()),
+			...requiredResponse(url, (row.amount + feeAmount).toString(), runtime),
 			extensions: fundingIntentExtension(
 				row.onchainBountyId,
 				row.creatorWallet,
 				row.amount,
 				feeAmount,
+				runtime,
 			),
 		};
 		return c.json(requirement, 402, {
@@ -257,12 +270,6 @@ app.get("/bounties/:id/funding", async (c) => {
 });
 
 app.post("/bounties/:id/fund", async (c) => {
-	if (!isX402Testnet()) {
-		return c.json(
-			{ error: "x402 funding is enabled on supported testnets only." },
-			503,
-		);
-	}
 	const id = c.req.param("id");
 	if (!isValidX402BountyId(id)) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
@@ -283,6 +290,24 @@ app.post("/bounties/:id/fund", async (c) => {
 	if (row?.status !== "Open" || !row.onchainBountyId) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
 	}
+	let runtime: ChainRuntime;
+	try {
+		runtime = getChainRuntime(row.chainId);
+	} catch {
+		return c.json({ error: "This bounty network is not configured." }, 503);
+	}
+	const { config: chainConfig, chain, publicClient } = runtime;
+	const network = `eip155:${chainConfig.id}`;
+	const tokenDomain = {
+		name: chainConfig.tokenEip712Name,
+		version: chainConfig.tokenEip712Version,
+	} as const;
+	if (!isX402Testnet(chainConfig.id)) {
+		return c.json(
+			{ error: "x402 funding is enabled on supported testnets only." },
+			503,
+		);
+	}
 	if (
 		row.escrowAddress &&
 		row.escrowAddress.toLowerCase() !== chainConfig.escrowAddress.toLowerCase()
@@ -302,7 +327,7 @@ app.post("/bounties/:id/fund", async (c) => {
 			409,
 		);
 	}
-	if (!ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY) {
+	if (!runtime.relayerPrivateKey) {
 		return c.json(
 			{
 				error:
@@ -333,7 +358,12 @@ app.post("/bounties/:id/fund", async (c) => {
 		}
 		const fallbackAmount =
 			row.amount + (row.amount * BigInt(fallbackFeeBps)) / 10_000n;
-		const quote = requiredResponse(url, fallbackAmount.toString(), message);
+		const quote = requiredResponse(
+			url,
+			fallbackAmount.toString(),
+			runtime,
+			message,
+		);
 		return c.json(quote, 402, {
 			"Cache-Control": "no-store",
 			"PAYMENT-REQUIRED": encodePaymentRequiredHeader(quote as never),
@@ -540,6 +570,7 @@ app.post("/bounties/:id/fund", async (c) => {
 				existing.transactionHash,
 				row.creatorWallet,
 				totalAmount.toString(),
+				runtime,
 			),
 			200,
 			{
@@ -549,6 +580,7 @@ app.post("/bounties/:id/fund", async (c) => {
 						existing.transactionHash,
 						row.creatorWallet,
 						totalAmount.toString(),
+						runtime,
 					) as never,
 				),
 			},
@@ -580,6 +612,7 @@ app.post("/bounties/:id/fund", async (c) => {
 					existing.transactionHash,
 					row.creatorWallet,
 					totalAmount.toString(),
+					runtime,
 				);
 				return c.json(result, 200, {
 					"PAYMENT-RESPONSE": encodePaymentResponseHeader(result as never),
@@ -645,7 +678,7 @@ app.post("/bounties/:id/fund", async (c) => {
 					payer: getAddress(row.creatorWallet),
 					authorizationNonce,
 				},
-				fromBlock: BigInt(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK),
+				fromBlock: runtime.deploymentBlock,
 				toBlock: "latest",
 			});
 			const recovered = logs.at(-1);
@@ -674,6 +707,7 @@ app.post("/bounties/:id/fund", async (c) => {
 					recoveredHash,
 					row.creatorWallet,
 					totalAmount.toString(),
+					runtime,
 				);
 				return c.json(result, 200, {
 					"PAYMENT-RESPONSE": encodePaymentResponseHeader(result as never),
@@ -751,9 +785,9 @@ app.post("/bounties/:id/fund", async (c) => {
 	let submittedTransactionHash: `0x${string}` | undefined;
 	try {
 		const account = privateKeyToAccount(
-			ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY as `0x${string}`,
+			runtime.relayerPrivateKey as `0x${string}`,
 		);
-		const gasOverrides = await getArcGasOverrides();
+		const gasOverrides = await getArcGasOverrides(runtime);
 		const walletClient = createWalletClient({
 			account,
 			chain,
@@ -841,6 +875,7 @@ app.post("/bounties/:id/fund", async (c) => {
 				transactionHash,
 				row.creatorWallet,
 				totalAmount.toString(),
+				runtime,
 			);
 			return c.json(result, 200, {
 				"PAYMENT-RESPONSE": encodePaymentResponseHeader(result as never),

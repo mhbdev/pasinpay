@@ -7,6 +7,7 @@ import {
 	ARC_USDC,
 	assertConfiguredToken,
 	chainConfigFromEnv,
+	chainConfigsFromEnv,
 	chains,
 	DEFAULT_CHAIN_CONFIG,
 	PASINPAY_ESCROW_ARC_TESTNET,
@@ -112,6 +113,26 @@ test("chain-specific escrow and token configuration wins over legacy Arbitrum de
 	);
 	expect(config.tokenAddress).toBe(
 		"0x0000000000000000000000000000000000000003",
+	);
+});
+
+test("multi-network config keeps independent RPC and escrow values", () => {
+	const configs = chainConfigsFromEnv({
+		PASINPAY_ARBITRUM_SEPOLIA_RPC_URL: "https://arb.example",
+		PASINPAY_ARBITRUM_SEPOLIA_ESCROW_ADDRESS:
+			"0x0000000000000000000000000000000000000011",
+		PASINPAY_ARC_TESTNET_RPC_URL: "https://arc.example",
+		PASINPAY_ARC_TESTNET_ESCROW_ADDRESS:
+			"0x0000000000000000000000000000000000000022",
+	});
+
+	expect(configs[ARBITRUM_SEPOLIA_ID].rpcUrl).toBe("https://arb.example");
+	expect(configs[ARBITRUM_SEPOLIA_ID].escrowAddress).toBe(
+		"0x0000000000000000000000000000000000000011",
+	);
+	expect(configs[ARC_TESTNET_ID].rpcUrl).toBe("https://arc.example");
+	expect(configs[ARC_TESTNET_ID].escrowAddress).toBe(
+		"0x0000000000000000000000000000000000000022",
 	);
 });
 

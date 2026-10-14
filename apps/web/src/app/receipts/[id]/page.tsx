@@ -1,5 +1,6 @@
 "use client";
 
+import type { ChainConfig } from "@pasinpay/chain";
 import { Badge } from "@pasinpay/ui/components/badge";
 import { Button } from "@pasinpay/ui/components/button";
 import {
@@ -18,14 +19,14 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAppNetwork } from "@/components/network-provider";
+import { NetworkBadge } from "@/components/network-badge";
 import { UsdAmount } from "@/components/usd-amount";
 import { authClient } from "@/lib/auth-client";
+import { type WebChainId, webChainConfigs } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function ReceiptPage() {
 	const { id } = useParams<{ id: string }>();
-	const { chainConfig } = useAppNetwork();
 	const { data: session, isPending: sessionPending } = authClient.useSession();
 	const [accessToken, setAccessToken] = useState<string>();
 	useEffect(() => {
@@ -80,6 +81,10 @@ export default function ReceiptPage() {
 				</Card>
 			</main>
 		);
+	const bountyChain = {
+		...webChainConfigs[bounty.chain.id as WebChainId],
+		...bounty.chain,
+	} as ChainConfig;
 	const evidence = claim?.evidence as
 		| {
 				commitHash?: string;
@@ -97,7 +102,7 @@ export default function ReceiptPage() {
 		? `https://github.com/${bounty.repository}/commit/${commitHash}`
 		: null;
 	const payoutUrl = bounty.claimantWallet
-		? `${chainConfig.explorerUrl}/address/${bounty.claimantWallet}`
+		? `${bountyChain.explorerUrl}/address/${bounty.claimantWallet}`
 		: null;
 	return (
 		<main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-5 py-16">
@@ -118,7 +123,7 @@ export default function ReceiptPage() {
 			<Card>
 				<CardHeader className="gap-4 border-b">
 					<CardTitle className="text-4xl tracking-tight">
-						<UsdAmount amount={bounty.amount} />
+						<UsdAmount amount={bounty.amount} chainConfig={bountyChain} />
 					</CardTitle>
 					<p className="text-muted-foreground text-sm">
 						Paid to{" "}
@@ -141,7 +146,10 @@ export default function ReceiptPage() {
 					<div>
 						<p className="text-muted-foreground text-xs">PLATFORM FEE</p>
 						<p className="mt-1 font-medium">
-							<UsdAmount amount={bounty.settlement?.feeAmount ?? "0"} />
+							<UsdAmount
+								amount={bounty.settlement?.feeAmount ?? "0"}
+								chainConfig={bountyChain}
+							/>
 						</p>
 					</div>
 					<div>
@@ -188,7 +196,7 @@ export default function ReceiptPage() {
 					</div>
 					<div>
 						<p className="text-muted-foreground text-xs">NETWORK</p>
-						<p className="mt-1 font-medium">{chainConfig.name}</p>
+						<NetworkBadge chainId={bounty.chain.id} />
 					</div>
 				</CardContent>
 			</Card>
@@ -198,15 +206,15 @@ export default function ReceiptPage() {
 						<a
 							href={
 								transactionHash
-									? `${chainConfig.explorerUrl}/tx/${transactionHash}`
-									: chainConfig.explorerUrl
+									? `${bountyChain.explorerUrl}/tx/${transactionHash}`
+									: bountyChain.explorerUrl
 							}
 							target="_blank"
 							rel="noreferrer"
 						/>
 					}
 				>
-					View on Arbiscan <ExternalLink data-icon="inline-end" />
+					View on block explorer <ExternalLink data-icon="inline-end" />
 				</Button>
 				<Button
 					variant="outline"

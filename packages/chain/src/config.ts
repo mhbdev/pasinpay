@@ -130,6 +130,16 @@ export const chainConfigs: Record<
 	[ARC_MAINNET_ID]: ARC_MAINNET_CONFIG,
 };
 
+const chainEnvPrefixes: Record<
+	(typeof SUPPORTED_CHAIN_IDS)[number],
+	{ full: string; legacy: string }
+> = {
+	[ARBITRUM_SEPOLIA_ID]: { full: "ARBITRUM_SEPOLIA", legacy: "SEPOLIA" },
+	[ARBITRUM_ID]: { full: "ARBITRUM", legacy: "MAINNET" },
+	[ARC_TESTNET_ID]: { full: "ARC_TESTNET", legacy: "ARC_TESTNET" },
+	[ARC_MAINNET_ID]: { full: "ARC", legacy: "ARC_MAINNET" },
+};
+
 export const chains = {
 	[arbitrumSepolia.id]: arbitrumSepolia,
 	[arbitrum.id]: arbitrum,
@@ -139,10 +149,10 @@ export const chains = {
 
 export { arbitrum, arbitrumSepolia };
 
-export function chainConfigFromEnv(
+export function chainConfigFromEnvForChain(
 	env: Record<string, string | undefined>,
+	id: number,
 ): ChainConfig {
-	const id = Number(env.PASINPAY_CHAIN_ID ?? ARBITRUM_SEPOLIA_ID);
 	if (
 		!SUPPORTED_CHAIN_IDS.includes(id as (typeof SUPPORTED_CHAIN_IDS)[number])
 	) {
@@ -155,14 +165,12 @@ export function chainConfigFromEnv(
 			`Platform fee must be an integer between 0 and 500 bps: ${feeBps}`,
 		);
 	}
-	const prefix = {
-		[ARBITRUM_SEPOLIA_ID]: "SEPOLIA",
-		[ARBITRUM_ID]: "MAINNET",
-		[ARC_TESTNET_ID]: "ARC_TESTNET",
-		[ARC_MAINNET_ID]: "ARC_MAINNET",
-	}[id as keyof typeof chainConfigs];
+	const { full, legacy } =
+		chainEnvPrefixes[id as keyof typeof chainEnvPrefixes];
+	const read = (suffix: string) =>
+		env[`PASINPAY_${full}_${suffix}`] ?? env[`PASINPAY_${legacy}_${suffix}`];
 	const tokenAddress =
-		env[`PASINPAY_${prefix}_TOKEN_ADDRESS`] ??
+		read("TOKEN_ADDRESS") ??
 		(id === ARBITRUM_SEPOLIA_ID
 			? env.PASINPAY_SEPOLIA_USDG_ADDRESS
 			: undefined) ??
@@ -173,19 +181,36 @@ export function chainConfigFromEnv(
 			: undefined) ??
 		base.tokenAddress;
 	const escrowAddress =
-		env[`PASINPAY_${prefix}_ESCROW_ADDRESS`] ??
-		env.PASINPAY_ESCROW_ADDRESS ??
-		base.escrowAddress;
+		read("ESCROW_ADDRESS") ?? env.PASINPAY_ESCROW_ADDRESS ?? base.escrowAddress;
 	return {
 		...base,
 		escrowAddress: getAddress(escrowAddress),
 		tokenAddress: getAddress(tokenAddress),
 		feeTreasury: getAddress(
-			env.PASINPAY_FEE_TREASURY_ADDRESS ?? base.feeTreasury,
+			read("FEE_TREASURY_ADDRESS") ??
+				env.PASINPAY_FEE_TREASURY_ADDRESS ??
+				base.feeTreasury,
 		),
 		feeBps,
-		rpcUrl: env.PASINPAY_RPC_URL || base.rpcUrl,
+		rpcUrl: read("RPC_URL") || env.PASINPAY_RPC_URL || base.rpcUrl,
 	};
+}
+
+export function chainConfigFromEnv(
+	env: Record<string, string | undefined>,
+): ChainConfig {
+	return chainConfigFromEnvForChain(
+		env,
+		Number(env.PASINPAY_CHAIN_ID ?? ARBITRUM_SEPOLIA_ID),
+	);
+}
+
+export function chainConfigsFromEnv(
+	env: Record<string, string | undefined>,
+): Record<(typeof SUPPORTED_CHAIN_IDS)[number], ChainConfig> {
+	return Object.fromEntries(
+		SUPPORTED_CHAIN_IDS.map((id) => [id, chainConfigFromEnvForChain(env, id)]),
+	) as Record<(typeof SUPPORTED_CHAIN_IDS)[number], ChainConfig>;
 }
 
 export const erc20MetadataAbi = [

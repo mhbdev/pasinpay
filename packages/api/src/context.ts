@@ -73,5 +73,6 @@ export type Context = {
 	db: Database;
 	github: GitHubService;
 	chain: ChainConfig;
+	chains: Partial<Record<number, ChainConfig>>;
 	accessTokenSecret: string;
 };

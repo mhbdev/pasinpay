@@ -24,7 +24,12 @@ import {
 	githubRequest,
 	listRepositoryPullRequests,
 } from "./lib/github";
-import { chainConfig, db, publicClient } from "./services";
+import {
+	type ChainRuntime,
+	configuredChainRuntimes,
+	db,
+	getChainRuntime,
+} from "./services";
 
 type PullRequestPayload = {
 	installation?: { id: number };
@@ -103,7 +108,8 @@ const claimSubmittedEvent = {
 	],
 } as const;
 
-async function syncChainEvents() {
+async function syncChainEvents(runtime: ChainRuntime) {
+	const { config: chainConfig, publicClient } = runtime;
 	if (
 		chainConfig.escrowAddress === "0x0000000000000000000000000000000000000000"
 	)
@@ -111,7 +117,7 @@ async function syncChainEvents() {
 	const [cursor] = await db
 		.select()
 		.from(chainCursor)
-		.where(eq(chainCursor.id, "escrow"));
+		.where(eq(chainCursor.id, `escrow:${chainConfig.id}`));
 	const latest = await publicClient.getBlockNumber();
 	const fromBlock =
 		cursor && cursor.chainId === chainConfig.id
@@ -301,7 +307,11 @@ async function syncChainEvents() {
 		}
 	await db
 		.insert(chainCursor)
-		.values({ id: "escrow", chainId: chainConfig.id, lastBlock: latest })
+		.values({
+			id: `escrow:${chainConfig.id}`,
+			chainId: chainConfig.id,
+			lastBlock: latest,
+		})
 		.onConflictDoUpdate({
 			target: chainCursor.id,
 			set: { lastBlock: latest, updatedAt: new Date() },
@@ -355,7 +365,6 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 			and(
 				eq(bounty.repository, repository),
 				eq(bounty.issueNumber, Number(bountyNumber)),
-				eq(bounty.chainId, chainConfig.id),
 				eq(bounty.status, "Funded"),
 			),
 		)
@@ -364,6 +373,14 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		!bountyRow ||
 		bountyRow.onchainBountyId === null ||
 		bountyRow.repository.toLowerCase() !== repository.toLowerCase()
+	)
+		return;
+	const runtime = getChainRuntime(bountyRow.chainId);
+	const { config: chainConfig, publicClient } = runtime;
+	if (
+		bountyRow.escrowAddress &&
+		bountyRow.escrowAddress.toLowerCase() !==
+			runtime.config.escrowAddress.toLowerCase()
 	)
 		return;
 	const escrowAddress = (bountyRow.escrowAddress ??
@@ -466,9 +483,9 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 			),
 			nonce: existingClaim.attestationNonce,
 		};
-		const attestor = await getContractAttestorAddress(escrowAddress);
+		const attestor = await getContractAttestorAddress(runtime);
 		const isTrusted = await verifyClaimSignature(
-			chainConfig.id,
+			runtime.config.id,
 			escrowAddress,
 			existingMessage,
 			existingClaim.attestationSignature as Hex,
@@ -476,8 +493,8 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		);
 		if (isTrusted) return;
 	}
-	const { signature } = await signClaim(message, escrowAddress);
-	const digest = claimDigest(chainConfig.id, escrowAddress, message);
+	const { signature } = await signClaim(message, runtime);
+	const digest = claimDigest(runtime.config.id, escrowAddress, message);
 
 	await db.transaction(async (tx) => {
 		if (existingClaim) {
@@ -565,11 +582,16 @@ async function reconcileGitHubClaims() {
 			githubInstallation,
 			eq(githubInstallation.id, repository.installationId),
 		)
-		.where(
-			and(eq(bounty.chainId, chainConfig.id), eq(bounty.status, "Funded")),
-		);
+		.where(eq(bounty.status, "Funded"));
 
 	for (const row of fundedBounties) {
+		const runtime = getChainRuntime(row.bounty.chainId);
+		if (
+			row.bounty.escrowAddress &&
+			row.bounty.escrowAddress.toLowerCase() !==
+				runtime.config.escrowAddress.toLowerCase()
+		)
+			continue;
 		if (row.bounty.onchainBountyId === null) continue;
 		const pullRequests = await listRepositoryPullRequests(
 			row.installationId,
@@ -649,10 +671,16 @@ export async function runWorker() {
 	for (;;) {
 		if (Date.now() - lastSync > 10_000) {
 			lastSync = Date.now();
-			try {
-				await syncChainEvents();
-			} catch (error) {
-				console.error("chain reconciliation failed", error);
+			for (const runtime of Object.values(configuredChainRuntimes)) {
+				if (!runtime) continue;
+				try {
+					await syncChainEvents(runtime);
+				} catch (error) {
+					console.error(
+						`chain reconciliation failed for ${runtime.config.name}`,
+						error,
+					);
+				}
 			}
 		}
 		if (Date.now() - lastGitHubReconciliation > 30_000) {

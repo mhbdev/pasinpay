@@ -12,11 +12,12 @@ import {
 	webChainConfigs,
 } from "./wallet";
 
-test("the web client only enables its configured backend network", () => {
-	const otherChainId = defaultWebChainId === 421614 ? 42161 : 421614;
-
+test("the web client enables each deployed testnet and keeps undeployed mainnets disabled", () => {
 	expect(isWebChainConfigured(defaultWebChainId)).toBe(true);
-	expect(isWebChainConfigured(otherChainId)).toBe(false);
+	expect(isWebChainConfigured(421614)).toBe(true);
+	expect(isWebChainConfigured(ARC_TESTNET_ID)).toBe(true);
+	expect(isWebChainConfigured(42161)).toBe(false);
+	expect(isWebChainConfigured(ARC_MAINNET_ID)).toBe(false);
 });
 
 test("Arc wallet networks use the official Arc USDC configuration", () => {

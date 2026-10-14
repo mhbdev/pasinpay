@@ -8,23 +8,27 @@ import {
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { ENV } from "../env.server";
-import { chainConfig, publicClient } from "../services";
+import { type ChainRuntime, defaultRuntime } from "../services";
 
 const zeroAddress = "0x0000000000000000000000000000000000000000" as Address;
 
-export function getConfiguredAttestorAddress(): Address {
-	if (!ENV.PASINPAY_ATTESTOR_PRIVATE_KEY)
-		throw new Error("PASINPAY_ATTESTOR_PRIVATE_KEY is not configured");
-	return privateKeyToAccount(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY as Hex).address;
+export function getConfiguredAttestorAddress(
+	runtime = defaultRuntime,
+): Address {
+	if (!runtime.attestorPrivateKey)
+		throw new Error(
+			`Claim attestor is not configured for ${runtime.config.name}`,
+		);
+	return privateKeyToAccount(runtime.attestorPrivateKey as Hex).address;
 }
 
 export async function getContractAttestorAddress(
-	escrowAddress = chainConfig.escrowAddress,
+	runtime: ChainRuntime = defaultRuntime,
 ): Promise<Address> {
+	const escrowAddress = runtime.config.escrowAddress;
 	if (escrowAddress === zeroAddress)
 		throw new Error("PASINPAY_ESCROW_ADDRESS is not configured");
-	return publicClient.readContract({
+	return runtime.publicClient.readContract({
 		address: escrowAddress,
 		abi: escrowAbi,
 		functionName: "attestor",
@@ -37,13 +41,13 @@ export async function getContractAttestorAddress(
  * by the deployed escrow.
  */
 export async function assertAttestorMatchesContract(
-	escrowAddress = chainConfig.escrowAddress,
+	runtime: ChainRuntime = defaultRuntime,
 ): Promise<{
 	configured: Address;
 	onChain: Address;
 }> {
-	const configured = getConfiguredAttestorAddress();
-	const onChain = await getContractAttestorAddress(escrowAddress);
+	const configured = getConfiguredAttestorAddress(runtime);
+	const onChain = await getContractAttestorAddress(runtime);
 	if (configured.toLowerCase() !== onChain.toLowerCase()) {
 		throw new Error(
 			`Configured claim attestor ${configured} does not match the escrow attestor ${onChain}`,
@@ -54,19 +58,20 @@ export async function assertAttestorMatchesContract(
 
 export async function signClaim(
 	message: ClaimMessage,
-	escrowAddress = chainConfig.escrowAddress,
+	runtime: ChainRuntime = defaultRuntime,
 ): Promise<{ signer: Address; signature: Hex }> {
-	const { onChain } = await assertAttestorMatchesContract(escrowAddress);
-	const account = privateKeyToAccount(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY as Hex);
+	const escrowAddress = runtime.config.escrowAddress;
+	const { onChain } = await assertAttestorMatchesContract(runtime);
+	const account = privateKeyToAccount(runtime.attestorPrivateKey as Hex);
 	const signature = await account.signTypedData({
-		domain: claimDomain(chainConfig.id, escrowAddress),
+		domain: claimDomain(runtime.config.id, escrowAddress),
 		types: claimTypes,
 		primaryType: "Claim",
 		message,
 	});
 	if (
 		!(await verifyClaimSignature(
-			chainConfig.id,
+			runtime.config.id,
 			escrowAddress,
 			message,
 			signature,

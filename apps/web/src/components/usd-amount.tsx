@@ -1,6 +1,6 @@
 "use client";
 
-import { erc20MetadataAbi } from "@pasinpay/chain";
+import { type ChainConfig, erc20MetadataAbi } from "@pasinpay/chain";
 import { formatUnits } from "viem";
 import { useReadContract } from "wagmi";
 import { useAppNetwork } from "./network-provider";
@@ -8,11 +8,14 @@ import { useAppNetwork } from "./network-provider";
 export function UsdAmount({
 	amount,
 	className,
+	chainConfig: requestedChainConfig,
 }: {
 	amount: string;
 	className?: string;
+	chainConfig?: Pick<ChainConfig, "id" | "tokenAddress" | "tokenSymbol">;
 }) {
-	const { chainConfig, ready } = useAppNetwork();
+	const { chainConfig: selectedChainConfig, ready } = useAppNetwork();
+	const chainConfig = requestedChainConfig ?? selectedChainConfig;
 	const { data: decimals } = useReadContract({
 		address: chainConfig.tokenAddress,
 		abi: erc20MetadataAbi,

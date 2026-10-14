@@ -44,6 +44,17 @@ const chainIdSchema = z
 	.int()
 	.refine((id) => (SUPPORTED_CHAIN_IDS as readonly number[]).includes(id));
 
+function configuredChain(ctx: Context, chainId: number) {
+	const config = ctx.chains[chainId];
+	if (!config) {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message: "This network is not enabled for PasinPay yet.",
+		});
+	}
+	return config;
+}
+
 function serializeBounty(row: typeof bounty.$inferSelect) {
 	const { joiningPasswordSalt, joiningPasswordHash, ...safeRow } = row;
 	return {
@@ -429,6 +440,10 @@ export const bountyRouter = router({
 							id: row.bounty.id,
 							title: row.bounty.title,
 							amount: row.bounty.amount.toString(),
+							chainId: row.bounty.chainId,
+							tokenSymbol:
+								chainConfigs[row.bounty.chainId as keyof typeof chainConfigs]
+									?.tokenSymbol ?? "USDG",
 							isPrivate: true as const,
 						};
 					return {
@@ -569,14 +584,14 @@ export const bountyRouter = router({
 					id: row.id,
 					title: row.title,
 					amount: row.amount.toString(),
+					chainId: row.chainId,
 					tokenSymbol:
 						chainConfigs[row.chainId as keyof typeof chainConfigs]
 							?.tokenSymbol ?? "USDG",
 				};
 			const bountyChain =
-				row.chainId === ctx.chain.id
-					? ctx.chain
-					: chainConfigs[row.chainId as keyof typeof chainConfigs];
+				ctx.chains[row.chainId] ??
+				chainConfigs[row.chainId as keyof typeof chainConfigs];
 			if (!bountyChain) return null;
 			const [creatorRow] = await ctx.db
 				.select({
@@ -802,8 +817,7 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			if (input.chainId !== ctx.chain.id)
-				throw new Error(`This API is configured for ${ctx.chain.name}`);
+			const targetChain = configuredChain(ctx, input.chainId);
 			const [linkedWallet] = await ctx.db
 				.select()
 				.from(walletLink)
@@ -811,6 +825,7 @@ export const bountyRouter = router({
 				.limit(1);
 			if (
 				!linkedWallet ||
+				linkedWallet.chainId !== targetChain.id ||
 				linkedWallet.walletAddress.toLowerCase() !==
 					input.creatorWallet.toLowerCase()
 			)
@@ -853,7 +868,7 @@ export const bountyRouter = router({
 				? await hashJoiningPassword(input.joiningPassword)
 				: null;
 			const expectedFee =
-				(rewardAmount * BigInt(ctx.chain.feeBps)) / BigInt(10_000);
+				(rewardAmount * BigInt(targetChain.feeBps)) / BigInt(10_000);
 			if (
 				feeAmount !== expectedFee ||
 				totalFunded !== rewardAmount + feeAmount
@@ -868,7 +883,7 @@ export const bountyRouter = router({
 					id: input.id,
 					userId: ctx.session.user.id,
 					chainId: input.chainId,
-					escrowAddress: ctx.chain.escrowAddress,
+					escrowAddress: targetChain.escrowAddress,
 					onchainBountyId: BigInt(input.onchainBountyId),
 					creatorWallet: getAddress(input.creatorWallet),
 					repository: input.repository,
@@ -897,7 +912,7 @@ export const bountyRouter = router({
 						amount: rewardAmount,
 						feeAmount,
 						totalFunded,
-						escrowAddress: ctx.chain.escrowAddress,
+						escrowAddress: targetChain.escrowAddress,
 						status: "Open",
 						joiningPasswordSalt: passwordHash?.salt ?? null,
 						joiningPasswordHash: passwordHash?.hash ?? null,
@@ -913,6 +928,7 @@ export const bountyRouter = router({
 		.input(
 			z.object({
 				onchainBountyId: z.string().regex(/^\d+$/),
+				chainId: chainIdSchema,
 				status: z.enum([
 					"Open",
 					"Funded",
@@ -925,14 +941,15 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
+			const targetChain = configuredChain(ctx, input.chainId);
 			const [row] = await ctx.db
 				.update(bounty)
 				.set({ status: input.status, updatedAt: new Date() })
 				.where(
 					and(
 						eq(bounty.userId, ctx.session.user.id),
-						eq(bounty.chainId, ctx.chain.id),
-						eq(bounty.escrowAddress, ctx.chain.escrowAddress),
+						eq(bounty.chainId, targetChain.id),
+						eq(bounty.escrowAddress, targetChain.escrowAddress),
 						eq(bounty.onchainBountyId, BigInt(input.onchainBountyId)),
 					),
 				)
@@ -948,13 +965,7 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			if (input.chainId !== ctx.chain.id) {
-				throw new TRPCError({
-					code: "BAD_REQUEST",
-					message:
-						"Switch to the configured PasinPay network before linking a wallet.",
-				});
-			}
+			configuredChain(ctx, input.chainId);
 			const nonce = randomBytes(24).toString("hex");
 			const message = [
 				"PasinPay wallet linking",
@@ -985,13 +996,7 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			if (input.chainId !== ctx.chain.id) {
-				throw new TRPCError({
-					code: "BAD_REQUEST",
-					message:
-						"Switch to the configured PasinPay network before linking a wallet.",
-				});
-			}
+			configuredChain(ctx, input.chainId);
 			const [challenge] = await ctx.db
 				.select()
 				.from(walletLinkChallenge)

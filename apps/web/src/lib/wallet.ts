@@ -111,12 +111,8 @@ export const walletConfig = createConfig({
 
 export const webChainConfig = webChainConfigs[defaultWebChainId];
 
-/** This web build talks to one chain-specific backend deployment at a time. */
 export function isWebChainConfigured(chainId: WebChainId) {
-	return (
-		chainId === defaultWebChainId &&
-		webChainConfigs[chainId].escrowAddress.toLowerCase() !== zeroAddress
-	);
+	return webChainConfigs[chainId].escrowAddress.toLowerCase() !== zeroAddress;
 }
 
 export const activeChain =

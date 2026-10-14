@@ -42,7 +42,10 @@ import {
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { NetworkBadge } from "@/components/network-badge";
 import { UsdAmount } from "@/components/usd-amount";
+import type { WebChainId } from "@/lib/wallet";
+import { webChainConfigs } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 const PAGE_SIZE = 12;
@@ -389,6 +392,7 @@ function BountiesContent() {
 									<div className="min-w-0 flex-1">
 										<div className="flex flex-wrap items-center gap-2">
 											<p className="truncate font-medium">{item.title}</p>
+											<NetworkBadge chainId={item.chainId} />
 											{item.isPrivate ? (
 												<Badge variant="outline">Private</Badge>
 											) : (
@@ -405,7 +409,13 @@ function BountiesContent() {
 									</div>
 									<div className="flex shrink-0 items-center gap-5">
 										<div className="text-right">
-											<UsdAmount amount={item.amount} className="font-medium" />
+											<UsdAmount
+												amount={item.amount}
+												chainConfig={
+													webChainConfigs[item.chainId as WebChainId]
+												}
+												className="font-medium"
+											/>
 											{!item.isPrivate ? (
 												<p className="mt-1 text-muted-foreground text-xs">
 													{new Date(item.deadline).toLocaleDateString(

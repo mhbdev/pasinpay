@@ -11,8 +11,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, BriefcaseBusiness, Plus } from "lucide-react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
+import { NetworkBadge } from "@/components/network-badge";
 import { UsdAmount } from "@/components/usd-amount";
 import { authClient } from "@/lib/auth-client";
+import { type WebChainId, webChainConfigs } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function DashboardPage() {
@@ -91,14 +93,22 @@ export default function DashboardPage() {
 										key={item.id}
 									>
 										<div>
-											<p className="font-medium">{item.title}</p>
+											<div className="flex flex-wrap items-center gap-2">
+												<p className="font-medium">{item.title}</p>
+												<NetworkBadge chainId={item.chainId} />
+											</div>
 											<p className="mt-1 text-muted-foreground text-sm">
 												{item.repository} · Issue #{item.issueNumber}
 											</p>
 										</div>
 										<div className="flex items-center gap-4">
 											<div className="text-right">
-												<UsdAmount amount={item.amount} />
+												<UsdAmount
+													amount={item.amount}
+													chainConfig={
+														webChainConfigs[item.chainId as WebChainId]
+													}
+												/>
 												<p className="mt-1 text-muted-foreground text-xs">
 													{item.status}
 												</p>

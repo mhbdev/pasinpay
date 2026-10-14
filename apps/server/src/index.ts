@@ -22,7 +22,13 @@ import { assertAttestorMatchesContract } from "./lib/attestor";
 import { githubWebhook } from "./routes/github-webhook";
 import { mcpRequest } from "./routes/mcp";
 import { x402Routes } from "./routes/x402";
-import { auth, chainConfig, db, publicClient } from "./services";
+import {
+	auth,
+	chainConfig,
+	configuredChainRuntimes,
+	db,
+	publicClient,
+} from "./services";
 
 initLogger({
 	env: { service: "pasinpay-server" },
@@ -121,6 +127,51 @@ app.get("/api/readiness", async (c) => {
 		if (!/^0x0{40}$/i.test(chainConfig.escrowAddress)) {
 			x402Adapter = await supportsX402Funding(publicClient, chainConfig);
 		}
+		const networks = Object.fromEntries(
+			await Promise.all(
+				Object.entries(configuredChainRuntimes).map(async ([id, runtime]) => {
+					if (!runtime) return [id, { ok: false, error: "not configured" }];
+					try {
+						const [connectedId, tokenCheck, adapter] = await Promise.all([
+							runtime.publicClient.getChainId(),
+							assertConfiguredToken(runtime.publicClient, runtime.config),
+							supportsX402Funding(runtime.publicClient, runtime.config),
+						]);
+						const attestor = runtime.attestorPrivateKey
+							? await assertAttestorMatchesContract(runtime)
+							: null;
+						return [
+							id,
+							{
+								ok:
+									connectedId === runtime.config.id &&
+									Boolean(attestor) &&
+									Boolean(runtime.relayerPrivateKey) &&
+									adapter,
+								name: runtime.config.name,
+								chainId: runtime.config.id,
+								token: tokenCheck,
+								attestor: attestor?.onChain ?? null,
+								x402: adapter && Boolean(runtime.relayerPrivateKey),
+							},
+						];
+					} catch (error) {
+						return [
+							id,
+							{
+								ok: false,
+								name: runtime.config.name,
+								chainId: runtime.config.id,
+								error:
+									error instanceof Error
+										? error.message
+										: "network check failed",
+							},
+						];
+					}
+				}),
+			),
+		);
 		const configuration = {
 			githubOAuth: Boolean(ENV.GITHUB_CLIENT_ID && ENV.GITHUB_CLIENT_SECRET),
 			githubApp: Boolean(
@@ -141,15 +192,26 @@ app.get("/api/readiness", async (c) => {
 				BigInt(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK) > 0n,
 		};
 		const { x402Testnet, ...requiredConfiguration } = configuration;
+		const allNetworksReady = Object.values(networks).every((network) =>
+			Boolean((network as { ok?: boolean }).ok),
+		);
 		if (
 			ENV.NODE_ENV === "production" &&
 			(Object.values(requiredConfiguration).some((configured) => !configured) ||
+				!allNetworksReady ||
 				((chainConfig.id === ARBITRUM_SEPOLIA_ID ||
 					chainConfig.id === ARC_TESTNET_ID) &&
 					!x402Testnet))
 		) {
 			return c.json(
-				{ ok: false, database: true, chain: true, token, configuration },
+				{
+					ok: false,
+					database: true,
+					chain: true,
+					token,
+					configuration,
+					networks,
+				},
 				503,
 			);
 		}
@@ -159,6 +221,7 @@ app.get("/api/readiness", async (c) => {
 			chain: true,
 			token,
 			configuration,
+			networks,
 		});
 	} catch {
 		return c.json(

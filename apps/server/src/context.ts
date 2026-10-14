@@ -2,7 +2,13 @@ import type { Context as ApiContext } from "@pasinpay/api/context";
 import type { Context as HonoContext } from "hono";
 
 import { ENV } from "./env.server";
-import { auth, chainConfig, db, githubService } from "./services";
+import {
+	auth,
+	chainConfig,
+	chainRuntimes,
+	db,
+	githubService,
+} from "./services";
 
 export type CreateContextOptions = {
 	context: HonoContext;
@@ -19,6 +25,15 @@ export async function createContext({
 		session,
 		github: githubService,
 		chain: chainConfig,
+		chains: Object.fromEntries(
+			Object.entries(chainRuntimes)
+				.filter(
+					([, runtime]) =>
+						runtime.config.escrowAddress.toLowerCase() !==
+						"0x0000000000000000000000000000000000000000",
+				)
+				.map(([id, runtime]) => [Number(id), runtime.config]),
+		),
 		accessTokenSecret: ENV.BETTER_AUTH_SECRET,
 	};
 }
