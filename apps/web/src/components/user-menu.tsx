@@ -34,7 +34,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useDisconnect } from "wagmi";
+import { useAccount, useDisconnect } from "wagmi";
 
 import { authClient } from "@/lib/auth-client";
 import { WalletMenuAction } from "./wallet-button";
@@ -45,6 +45,7 @@ export default function UserMenu() {
 	const [signOutOpen, setSignOutOpen] = useState(false);
 	const [signingOut, setSigningOut] = useState(false);
 	const { disconnect } = useDisconnect();
+	const { connector } = useAccount();
 	const { data: session, isPending } = authClient.useSession();
 
 	if (isPending) {
@@ -145,7 +146,7 @@ export default function UserMenu() {
 						<Button
 							variant="destructive"
 							onClick={() => {
-								disconnect();
+								disconnect({ connector });
 								setDisconnectOpen(false);
 							}}
 						>

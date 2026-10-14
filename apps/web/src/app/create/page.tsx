@@ -813,6 +813,48 @@ export default function CreateBountyPage() {
 										required
 									/>
 								</div>
+								<div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4 sm:col-span-2">
+									<div className="flex items-start justify-between gap-4">
+										<div>
+											<p className="font-medium text-sm">
+												Password protected bounty
+											</p>
+											<p className="mt-1 text-muted-foreground text-xs">
+												Only people who join with your password can view details
+												or qualify to claim.
+											</p>
+										</div>
+										<Switch
+											aria-label="Require a joining password"
+											checked={passwordProtection}
+											onCheckedChange={(checked) => {
+												setPasswordProtection(checked);
+												if (!checked) setJoiningPassword("");
+											}}
+										/>
+									</div>
+									{passwordProtection ? (
+										<div className="flex flex-col gap-2">
+											<Label htmlFor="joining-password">Joining password</Label>
+											<Input
+												autoComplete="new-password"
+												id="joining-password"
+												maxLength={128}
+												minLength={12}
+												onChange={(event) =>
+													setJoiningPassword(event.target.value)
+												}
+												placeholder="At least 12 characters"
+												type="password"
+												value={joiningPassword}
+											/>
+											<p className="text-muted-foreground text-xs">
+												Requires a private GitHub repository and a linked GitHub
+												account to join.
+											</p>
+										</div>
+									) : null}
+								</div>
 							</CardContent>
 						</Card>
 						<div className="flex flex-wrap items-center gap-3">
@@ -837,44 +879,6 @@ export default function CreateBountyPage() {
 							{error && <p className="text-destructive text-sm">{error}</p>}
 						</div>
 					</form>
-				</div>
-				<div className="flex flex-col gap-3 rounded-md border p-4 sm:col-span-2">
-					<div className="flex items-center justify-between gap-4">
-						<div>
-							<p className="font-medium text-sm">Password protected bounty</p>
-							<p className="mt-1 text-muted-foreground text-xs">
-								Only people who join with your password can view details or
-								qualify to claim.
-							</p>
-						</div>
-						<Switch
-							aria-label="Require a joining password"
-							checked={passwordProtection}
-							onCheckedChange={(checked) => {
-								setPasswordProtection(checked);
-								if (!checked) setJoiningPassword("");
-							}}
-						/>
-					</div>
-					{passwordProtection ? (
-						<div className="flex flex-col gap-2">
-							<Label htmlFor="joining-password">Joining password</Label>
-							<Input
-								autoComplete="new-password"
-								id="joining-password"
-								maxLength={128}
-								minLength={12}
-								onChange={(event) => setJoiningPassword(event.target.value)}
-								placeholder="At least 12 characters"
-								type="password"
-								value={joiningPassword}
-							/>
-							<p className="text-muted-foreground text-xs">
-								Requires a private GitHub repository and a linked GitHub account
-								to join.
-							</p>
-						</div>
-					) : null}
 				</div>
 				<Card className="h-fit lg:sticky lg:top-8">
 					<CardHeader>

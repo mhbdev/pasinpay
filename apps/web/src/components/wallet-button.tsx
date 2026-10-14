@@ -24,7 +24,7 @@ function shortAddress(address: string) {
 
 export function WalletButton() {
 	const [disconnectOpen, setDisconnectOpen] = useState(false);
-	const { address, isConnected } = useAccount();
+	const { address, connector: activeConnector, isConnected } = useAccount();
 	const { connect, connectors, isPending } = useConnect();
 	const { disconnect } = useDisconnect();
 	const { chainId: walletChainId } = useAccount();
@@ -62,7 +62,7 @@ export function WalletButton() {
 						<Button
 							variant="destructive"
 							onClick={() => {
-								disconnect();
+								disconnect({ connector: activeConnector });
 								setDisconnectOpen(false);
 							}}
 						>
