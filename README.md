@@ -144,6 +144,8 @@ The following addresses are used by the documented project testnet deployments. 
 
 | Network | Role | Address | Explorer |
 | --- | --- | --- | --- |
+| Arbitrum Sepolia | Test deployer / funded test wallet | `0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50` | [View address](https://sepolia.arbiscan.io/address/0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50) |
+| Arbitrum Sepolia | Escrow fee treasury (250 bps) | `0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c` | [View address](https://sepolia.arbiscan.io/address/0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c) |
 | Arc Testnet | Test deployer / funded test wallet | `0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50` | [View address](https://explorer.testnet.arc.io/address/0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50) |
 | Arc Testnet | Escrow fee treasury (250 bps) | `0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c` | [View address](https://explorer.testnet.arc.io/address/0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c) |
 
