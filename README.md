@@ -135,3 +135,25 @@ Generate a migration after schema changes with `bun run db:generate`; review and
 See [docs/production.md](docs/production.md) for required GitHub configuration, network/token addresses, secret settings, deployment order, x402 behavior, and go-live checks. The Docker Compose helpers are `bun run docker:build`, `bun run docker:up`, `bun run docker:logs`, and `bun run docker:down`.
 
 Mainnet use involves real assets and requires a reviewed escrow deployment, verified source, secure signer and owner key handling, backups, monitoring, and an independent smart-contract audit. Configuration support is not equivalent to a deployed or audited production integration.
+
+## Testnet addresses
+
+The following addresses are used by the documented project testnet deployments. Links open the corresponding network explorer. Wallet roles are included where they were recorded in the deployment notes; role addresses are public identifiers, never private keys.
+
+### Wallets and fee recipient
+
+| Network | Role | Address | Explorer |
+| --- | --- | --- | --- |
+| Arc Testnet | Test deployer / funded test wallet | `0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50` | [View address](https://explorer.testnet.arc.io/address/0xd3D7687D3c5d6E3e14062Fb4206c774B59360b50) |
+| Arc Testnet | Escrow fee treasury (250 bps) | `0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c` | [View address](https://explorer.testnet.arc.io/address/0xBeB255445aCbF22d79C4b464A7A0e0B733969d2c) |
+
+### Deployed contracts and tokens
+
+| Network | Contract | Address | Explorer |
+| --- | --- | --- | --- |
+| Arc Testnet | PasinPay escrow (x402 capable) | `0x1bc0ace2be823c5c94df45dd6ee7d20624f03d21` | [View verified contract](https://explorer.testnet.arc.io/address/0x1bc0ace2be823c5c94df45dd6ee7d20624f03d21) |
+| Arc Testnet | USDC (native Arc test token interface) | `0x3600000000000000000000000000000000000000` | [View token](https://explorer.testnet.arc.io/address/0x3600000000000000000000000000000000000000) |
+| Arbitrum Sepolia | PasinPay escrow (x402 capable) | `0x3591645C5DBfa67FC18B32b3f13d65f22d87d75D` | [View contract](https://sepolia.arbiscan.io/address/0x3591645C5DBfa67FC18B32b3f13d65f22d87d75D) |
+| Arbitrum Sepolia | USDG test token | `0xFFC95faa3d63Cde504a05B567C600B78C0b41892` | [View token](https://sepolia.arbiscan.io/address/0xFFC95faa3d63Cde504a05B567C600B78C0b41892) |
+
+The Arc Testnet deployment's owner, attestor, and x402 relayer are also project wallets, but their addresses are not published in the deployment records. Their private keys must remain in local secret storage and must never be committed. A previous Arbitrum Sepolia escrow at `0x19B6944FB4748831D1B8462dDbD53F32655E1AF7` predates the x402 adapter and is not the active deployment; [view it on Arbiscan Sepolia](https://sepolia.arbiscan.io/address/0x19B6944FB4748831D1B8462dDbD53F32655E1AF7).
