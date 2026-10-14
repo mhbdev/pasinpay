@@ -1,4 +1,11 @@
-import { escrowAbi, supportsX402Funding } from "@pasinpay/chain";
+import {
+	ARBITRUM_SEPOLIA_ID,
+	ARC_MAINNET_ID,
+	ARC_TESTNET_ID,
+	escrowAbi,
+	getEip1559FeeQuote,
+	supportsX402Funding,
+} from "@pasinpay/chain";
 import { bounty, x402FundingPayment } from "@pasinpay/db/schema/index";
 import {
 	decodePaymentSignatureHeader,
@@ -28,7 +35,10 @@ import { chain, chainConfig, db, publicClient } from "../services";
 
 const app = new Hono();
 const network = `eip155:${chainConfig.id}`;
-const tokenDomain = { name: "Global Dollar", version: "1" } as const;
+const tokenDomain = {
+	name: chainConfig.tokenEip712Name,
+	version: chainConfig.tokenEip712Version,
+} as const;
 const fundingTypes = {
 	X402Funding: [
 		{ name: "bountyId", type: "uint256" },
@@ -52,6 +62,28 @@ const authorizationTypes = {
 const x402FundedEvent = parseAbiItem(
 	"event X402BountyFunded(uint256 indexed bountyId,address indexed payer,bytes32 indexed authorizationNonce,uint128 totalAmount)",
 );
+const x402TestnetIds = [ARBITRUM_SEPOLIA_ID, ARC_TESTNET_ID] as const;
+
+function isX402Testnet() {
+	return x402TestnetIds.includes(
+		chainConfig.id as (typeof x402TestnetIds)[number],
+	);
+}
+
+async function getArcGasOverrides() {
+	if (chainConfig.id !== ARC_MAINNET_ID && chainConfig.id !== ARC_TESTNET_ID) {
+		return {};
+	}
+	const [block, estimate] = await Promise.all([
+		publicClient.getBlock({ blockTag: "latest" }),
+		publicClient.estimateFeesPerGas(),
+	]);
+	return getEip1559FeeQuote(
+		chainConfig.id,
+		block.baseFeePerGas ?? estimate.maxFeePerGas ?? BigInt(0),
+		estimate,
+	);
+}
 
 function requiredResponse(url: string, amount: string, error?: string) {
 	return {
@@ -59,7 +91,7 @@ function requiredResponse(url: string, amount: string, error?: string) {
 		...(error ? { error } : {}),
 		resource: {
 			url,
-			description: "Fund this PasinPay GitHub bounty in USDG escrow.",
+			description: `Fund this PasinPay GitHub bounty in ${chainConfig.tokenSymbol} escrow.`,
 			mimeType: "application/json",
 		},
 		accepts: [
@@ -67,7 +99,7 @@ function requiredResponse(url: string, amount: string, error?: string) {
 				scheme: "exact",
 				network,
 				amount,
-				asset: chainConfig.usdgAddress,
+				asset: chainConfig.tokenAddress,
 				payTo: chainConfig.escrowAddress,
 				maxTimeoutSeconds: 300,
 				extra: {
@@ -136,6 +168,12 @@ function readPaymentHeader(raw: string) {
 }
 
 app.get("/bounties/:id/funding", async (c) => {
+	if (!isX402Testnet()) {
+		return c.json(
+			{ error: "x402 funding is enabled on supported testnets only." },
+			503,
+		);
+	}
 	const id = c.req.param("id");
 	if (!isValidX402BountyId(id)) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
@@ -169,18 +207,15 @@ app.get("/bounties/:id/funding", async (c) => {
 		`/api/x402/bounties/${row.id}/fund`,
 		ENV.BETTER_AUTH_URL,
 	).toString();
-	if (row.chainId !== 421614 || chainConfig.id !== 421614) {
+	if (row.chainId !== chainConfig.id) {
 		return c.json(
-			{
-				error:
-					"x402 bounty funding is currently available on Arbitrum Sepolia only.",
-			},
-			503,
+			{ error: "This bounty belongs to another network deployment." },
+			409,
 		);
 	}
 	if (/^0x0{40}$/i.test(chainConfig.escrowAddress)) {
 		return c.json(
-			{ error: "The Arbitrum Sepolia escrow is not configured." },
+			{ error: `The ${chainConfig.name} escrow is not configured.` },
 			503,
 		);
 	}
@@ -189,7 +224,7 @@ app.get("/bounties/:id/funding", async (c) => {
 		// the token's EIP-3009 authorization state are available on the active network.
 		if (!(await supportsX402Funding(publicClient, chainConfig))) {
 			throw new Error(
-				"The x402 escrow or USDG EIP-3009 interface is unavailable.",
+				`The x402 escrow or ${chainConfig.tokenSymbol} EIP-3009 interface is unavailable.`,
 			);
 		}
 		const feeBps = await publicClient.readContract({
@@ -222,6 +257,12 @@ app.get("/bounties/:id/funding", async (c) => {
 });
 
 app.post("/bounties/:id/fund", async (c) => {
+	if (!isX402Testnet()) {
+		return c.json(
+			{ error: "x402 funding is enabled on supported testnets only." },
+			503,
+		);
+	}
 	const id = c.req.param("id");
 	if (!isValidX402BountyId(id)) {
 		return c.json({ error: "An open on-chain bounty was not found." }, 404);
@@ -255,17 +296,17 @@ app.post("/bounties/:id/fund", async (c) => {
 		`/api/x402/bounties/${row.id}/fund`,
 		ENV.BETTER_AUTH_URL,
 	).toString();
-	if (chainConfig.id !== 421614 || row.chainId !== 421614) {
+	if (row.chainId !== chainConfig.id) {
 		return c.json(
-			{ error: "x402 funding is currently restricted to Arbitrum Sepolia." },
-			503,
+			{ error: "This bounty belongs to another network deployment." },
+			409,
 		);
 	}
 	if (!ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY) {
 		return c.json(
 			{
 				error:
-					"x402 settlement is not enabled: the Sepolia relayer is not configured.",
+					"x402 settlement is not enabled: the testnet relayer is not configured.",
 			},
 			503,
 		);
@@ -317,7 +358,7 @@ app.post("/bounties/:id/fund", async (c) => {
 		paymentExtra?.version !== tokenDomain.version ||
 		accepted?.maxTimeoutSeconds !== 300 ||
 		accepted?.asset?.toString().toLowerCase() !==
-			chainConfig.usdgAddress.toLowerCase() ||
+			chainConfig.tokenAddress.toLowerCase() ||
 		accepted?.payTo?.toString().toLowerCase() !==
 			chainConfig.escrowAddress.toLowerCase() ||
 		payment.resource?.url !== url ||
@@ -421,7 +462,7 @@ app.post("/bounties/:id/fund", async (c) => {
 			domain: {
 				...tokenDomain,
 				chainId: chainConfig.id,
-				verifyingContract: chainConfig.usdgAddress,
+				verifyingContract: chainConfig.tokenAddress,
 			},
 			types: authorizationTypes,
 			primaryType: "TransferWithAuthorization",
@@ -712,6 +753,7 @@ app.post("/bounties/:id/fund", async (c) => {
 		const account = privateKeyToAccount(
 			ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY as `0x${string}`,
 		);
+		const gasOverrides = await getArcGasOverrides();
 		const walletClient = createWalletClient({
 			account,
 			chain,
@@ -721,6 +763,7 @@ app.post("/bounties/:id/fund", async (c) => {
 			address: chainConfig.escrowAddress,
 			abi: escrowAbi,
 			functionName: "fundBountyWithX402",
+			...gasOverrides,
 			args: [
 				row.onchainBountyId,
 				row.amount,

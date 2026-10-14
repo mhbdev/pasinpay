@@ -2,7 +2,7 @@
 
 ## Runtime flow
 
-1. A maintainer signs `createBounty`, approves USDG, and signs `fundBounty` from the web app.
+1. A maintainer signs `createBounty`, approves the configured chain token, and signs `fundBounty` from the web app.
 2. GitHub sends a signed `pull_request` webhook when a PR closes.
 3. The API validates the HMAC and delivery ID, then writes a durable worker job.
 4. The worker verifies the installation-scoped PR, repository, merge state, issue marker, and contributor wallet.

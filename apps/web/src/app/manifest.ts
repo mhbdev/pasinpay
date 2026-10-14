@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
 	return {
 		name: "PasinPay",
 		short_name: "PasinPay",
-		description: "Pay for shipped GitHub code automatically in USDG.",
+		description: "Pay for shipped GitHub code automatically with stablecoins.",
 		start_url: "/",
 		display: "standalone",
 		background_color: "#f8fafc",

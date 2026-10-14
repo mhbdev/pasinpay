@@ -1,6 +1,12 @@
 "use client";
 
-import { erc20MetadataAbi, escrowAbi } from "@pasinpay/chain";
+import {
+	ARBITRUM_SEPOLIA_ID,
+	ARC_TESTNET_ID,
+	erc20MetadataAbi,
+	escrowAbi,
+	type SupportedChainId,
+} from "@pasinpay/chain";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -119,13 +125,13 @@ export default function CreateBountyPage() {
 	const { writeContractAsync } = useWriteContract();
 	const { signTypedDataAsync } = useSignTypedData();
 	const { data: decimals } = useReadContract({
-		address: chainConfig.usdgAddress,
+		address: chainConfig.tokenAddress,
 		abi: erc20MetadataAbi,
 		functionName: "decimals",
 		chainId: chainConfig.id,
 	});
 	const { data: tokenSymbol } = useReadContract({
-		address: chainConfig.usdgAddress,
+		address: chainConfig.tokenAddress,
 		abi: erc20MetadataAbi,
 		functionName: "symbol",
 		chainId: chainConfig.id,
@@ -198,8 +204,14 @@ export default function CreateBountyPage() {
 			return "Joining passwords must be at least 12 characters.";
 		if (passwordProtection && joiningPassword.length > 128)
 			return "Joining passwords must be no more than 128 characters.";
-		if (!amount || !/^\d+(\.\d{1,18})?$/.test(amount) || Number(amount) <= 0)
-			return "Enter a positive USDG reward amount.";
+		if (decimals === undefined)
+			return `${chainConfig.tokenSymbol} metadata is not available yet. Try again shortly.`;
+		if (
+			!amount ||
+			!new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`).test(amount) ||
+			Number(amount) <= 0
+		)
+			return `Enter a positive ${chainConfig.tokenSymbol} reward amount.`;
 		const deadlineDate = new Date(deadline);
 		if (
 			Number.isNaN(deadlineDate.getTime()) ||
@@ -208,13 +220,13 @@ export default function CreateBountyPage() {
 			return "Choose a deadline in the future.";
 		if (
 			decimals === undefined ||
-			tokenSymbol !== "USDG" ||
+			tokenSymbol !== chainConfig.tokenSymbol ||
 			platformFeeBps === undefined ||
 			platformFeeBps > 500 ||
 			!feeTreasury ||
 			/^0x0{40}$/i.test(feeTreasury)
 		)
-			return "USDG metadata is not available yet. Try again shortly.";
+			return `${chainConfig.tokenSymbol} metadata is not available yet. Try again shortly.`;
 		return null;
 	}
 
@@ -307,7 +319,7 @@ export default function CreateBountyPage() {
 				issueTitle: finalIssueTitle,
 				issueUrl: finalIssueUrl,
 				creationMode,
-				chainId: chainConfig.id as 421614 | 42161,
+				chainId: chainConfig.id as SupportedChainId,
 				title: `[PasinPay #${finalIssueNumber}] ${title.trim() || finalIssueTitle}`,
 				amount: rawAmount.toString(),
 				feeAmount: feeAmount.toString(),
@@ -317,7 +329,10 @@ export default function CreateBountyPage() {
 				...(passwordProtection ? { joiningPassword } : {}),
 			});
 			let fundingHash: `0x${string}`;
-			if (chainConfig.id === 421614) {
+			if (
+				chainConfig.id === ARBITRUM_SEPOLIA_ID ||
+				chainConfig.id === ARC_TESTNET_ID
+			) {
 				setStep("approving");
 				const serverUrl = (process.env.NEXT_PUBLIC_SERVER_URL ?? "").replace(
 					/\/$/,
@@ -332,8 +347,7 @@ export default function CreateBountyPage() {
 						error?: string;
 					} | null;
 					throw new Error(
-						quoteError?.error ??
-							"The Arbitrum Sepolia x402 quote is unavailable.",
+						quoteError?.error ?? "The testnet x402 quote is unavailable.",
 					);
 				}
 				const quote = (await quoteResponse.json()) as {
@@ -355,7 +369,7 @@ export default function CreateBountyPage() {
 					accepted?.scheme !== "exact" ||
 					accepted.network !== `eip155:${chainConfig.id}` ||
 					accepted.asset.toLowerCase() !==
-						chainConfig.usdgAddress.toLowerCase() ||
+						chainConfig.tokenAddress.toLowerCase() ||
 					accepted.payTo.toLowerCase() !==
 						chainConfig.escrowAddress.toLowerCase() ||
 					BigInt(accepted.amount) !== totalFunded
@@ -387,10 +401,10 @@ export default function CreateBountyPage() {
 				} as const;
 				const authorizationSignature = await signTypedDataAsync({
 					domain: {
-						name: "Global Dollar",
-						version: "1",
+						name: chainConfig.tokenEip712Name,
+						version: chainConfig.tokenEip712Version,
 						chainId: chainConfig.id,
-						verifyingContract: chainConfig.usdgAddress,
+						verifyingContract: chainConfig.tokenAddress,
 					},
 					types: authorizationTypes,
 					primaryType: "TransferWithAuthorization",
@@ -536,7 +550,7 @@ export default function CreateBountyPage() {
 				setStep("approving");
 				const approvalHash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
-						address: chainConfig.usdgAddress,
+						address: chainConfig.tokenAddress,
 						abi: erc20ApproveAbi,
 						functionName: "approve",
 						args: [chainConfig.escrowAddress, totalFunded],
@@ -589,8 +603,8 @@ export default function CreateBountyPage() {
 					</h1>
 					<p className="mt-3 max-w-xl text-muted-foreground">
 						Choose an existing GitHub issue or create one as part of the bounty.
-						USDG is locked only after the issue is mapped to the on-chain
-						escrow.
+						{chainConfig.tokenSymbol} is locked only after the issue is mapped
+						to the on-chain escrow.
 					</p>
 					<form className="mt-8 flex flex-col gap-6" onSubmit={submit}>
 						<Card>
@@ -776,7 +790,9 @@ export default function CreateBountyPage() {
 									/>
 								</div>
 								<div className="flex flex-col gap-2">
-									<Label htmlFor="amount">Reward in USDG</Label>
+									<Label htmlFor="amount">
+										Reward in {chainConfig.tokenSymbol}
+									</Label>
 									<Input
 										id="amount"
 										inputMode="decimal"
@@ -808,12 +824,12 @@ export default function CreateBountyPage() {
 								{step === "creating" ? (
 									"Creating bounty…"
 								) : step === "approving" ? (
-									"Approve USDG…"
+									`Approve ${chainConfig.tokenSymbol}…`
 								) : step === "funding" ? (
 									"Funding bounty…"
 								) : (
 									<>
-										Fund ${amount || "0"} USDG + fee{" "}
+										Fund ${amount || "0"} ${chainConfig.tokenSymbol} + fee{" "}
 										<ArrowRight data-icon="inline-end" />
 									</>
 								)}
@@ -881,7 +897,9 @@ export default function CreateBountyPage() {
 								<span className="text-muted-foreground">
 									Contributor reward
 								</span>
-								<span className="font-semibold">{amount || "0"} USDG</span>
+								<span className="font-semibold">
+									{amount || "0"} {chainConfig.tokenSymbol}
+								</span>
 							</div>
 							<div className="flex justify-between gap-4 text-muted-foreground">
 								<span>
@@ -890,7 +908,7 @@ export default function CreateBountyPage() {
 								<span>
 									{decimals === undefined
 										? "—"
-										: `${formatUnits(feeAmount, decimals)} USDG`}
+										: `${formatUnits(feeAmount, decimals)} ${chainConfig.tokenSymbol}`}
 								</span>
 							</div>
 							<div className="flex justify-between gap-4 border-t pt-2 font-semibold">
@@ -898,7 +916,7 @@ export default function CreateBountyPage() {
 								<span>
 									{decimals === undefined
 										? "—"
-										: `${formatUnits(totalFunded, decimals)} USDG`}
+										: `${formatUnits(totalFunded, decimals)} ${chainConfig.tokenSymbol}`}
 								</span>
 							</div>
 						</div>

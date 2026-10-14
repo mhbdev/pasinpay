@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { chainConfigs, SUPPORTED_CHAIN_IDS } from "@pasinpay/chain";
 import {
 	account,
 	bounty,
@@ -27,7 +28,6 @@ import {
 } from "drizzle-orm";
 import { getAddress, keccak256, toBytes, verifyMessage } from "viem";
 import { z } from "zod";
-
 import type { Context } from "../context";
 import { protectedProcedure, publicProcedure, router } from "../index";
 import {
@@ -39,12 +39,19 @@ import {
 import { getPullRequestStatus } from "../lib/pull-request-status";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+const chainIdSchema = z
+	.number()
+	.int()
+	.refine((id) => (SUPPORTED_CHAIN_IDS as readonly number[]).includes(id));
 
 function serializeBounty(row: typeof bounty.$inferSelect) {
 	const { joiningPasswordSalt, joiningPasswordHash, ...safeRow } = row;
 	return {
 		...safeRow,
 		isPrivate: Boolean(joiningPasswordSalt || joiningPasswordHash),
+		tokenSymbol:
+			chainConfigs[row.chainId as keyof typeof chainConfigs]?.tokenSymbol ??
+			"USDG",
 		amount: row.amount.toString(),
 		feeAmount: row.feeAmount.toString(),
 		totalFunded: row.totalFunded.toString(),
@@ -562,7 +569,15 @@ export const bountyRouter = router({
 					id: row.id,
 					title: row.title,
 					amount: row.amount.toString(),
+					tokenSymbol:
+						chainConfigs[row.chainId as keyof typeof chainConfigs]
+							?.tokenSymbol ?? "USDG",
 				};
+			const bountyChain =
+				row.chainId === ctx.chain.id
+					? ctx.chain
+					: chainConfigs[row.chainId as keyof typeof chainConfigs];
+			if (!bountyChain) return null;
 			const [creatorRow] = await ctx.db
 				.select({
 					name: user.name,
@@ -674,12 +689,13 @@ export const bountyRouter = router({
 				},
 				chain: {
 					id: row.chainId,
-					name: ctx.chain.name,
-					escrowAddress: row.escrowAddress ?? ctx.chain.escrowAddress,
-					tokenAddress: ctx.chain.usdgAddress,
-					feeTreasury: ctx.chain.feeTreasury,
-					feeBps: ctx.chain.feeBps,
-					explorerUrl: ctx.chain.explorerUrl,
+					name: bountyChain.name,
+					escrowAddress: row.escrowAddress ?? bountyChain.escrowAddress,
+					tokenAddress: bountyChain.tokenAddress,
+					tokenSymbol: bountyChain.tokenSymbol,
+					feeTreasury: bountyChain.feeTreasury,
+					feeBps: bountyChain.feeBps,
+					explorerUrl: bountyChain.explorerUrl,
 				},
 				stats: {
 					participants: contributorKeys.length
@@ -771,7 +787,7 @@ export const bountyRouter = router({
 				issueTitle: z.string().min(1).max(300),
 				issueUrl: z.string().url(),
 				creationMode: z.enum(["existing", "new"]),
-				chainId: z.union([z.literal(421614), z.literal(42161)]),
+				chainId: chainIdSchema,
 				title: z.string().min(1).max(200),
 				amount: z.string().regex(/^\d+$/),
 				feeAmount: z.string().regex(/^\d+$/),
@@ -928,10 +944,17 @@ export const bountyRouter = router({
 		.input(
 			z.object({
 				address: addressSchema,
-				chainId: z.union([z.literal(421614), z.literal(42161)]),
+				chainId: chainIdSchema,
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
+			if (input.chainId !== ctx.chain.id) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"Switch to the configured PasinPay network before linking a wallet.",
+				});
+			}
 			const nonce = randomBytes(24).toString("hex");
 			const message = [
 				"PasinPay wallet linking",
@@ -957,11 +980,18 @@ export const bountyRouter = router({
 			z.object({
 				nonce: z.string(),
 				address: addressSchema,
-				chainId: z.union([z.literal(421614), z.literal(42161)]),
+				chainId: chainIdSchema,
 				signature: z.string().regex(/^0x[a-fA-F0-9]+$/),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
+			if (input.chainId !== ctx.chain.id) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"Switch to the configured PasinPay network before linking a wallet.",
+				});
+			}
 			const [challenge] = await ctx.db
 				.select()
 				.from(walletLinkChallenge)

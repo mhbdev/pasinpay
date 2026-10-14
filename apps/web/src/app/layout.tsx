@@ -22,7 +22,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
 	title: "PasinPay — Pay for shipped code, automatically.",
 	description:
-		"Fund GitHub work in USDG. Settle verified merged pull requests on Arbitrum.",
+		"Fund GitHub work with stablecoins. Settle verified merged pull requests on supported EVM networks.",
 };
 
 export default function RootLayout({

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChainConfig } from "@pasinpay/chain";
+import { SUPPORTED_CHAIN_IDS } from "@pasinpay/chain";
 import {
 	createContext,
 	useCallback,
@@ -32,7 +33,7 @@ type NetworkContextValue = {
 const NetworkContext = createContext<NetworkContextValue | null>(null);
 
 function isWebChainId(value: number): value is WebChainId {
-	return value === 421614 || value === 42161;
+	return SUPPORTED_CHAIN_IDS.includes(value as WebChainId);
 }
 
 export function NetworkProvider({ children }: { children: React.ReactNode }) {

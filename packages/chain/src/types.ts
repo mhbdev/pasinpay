@@ -14,13 +14,18 @@ export type ChainConfig = {
 	id: number;
 	name: string;
 	escrowAddress: Address;
-	usdgAddress: Address;
+	tokenAddress: Address;
+	tokenSymbol: "USDG" | "USDC";
+	tokenEip712Name: string;
+	tokenEip712Version: string;
 	feeTreasury: Address;
 	feeBps: number;
 	explorerUrl: string;
 	rpcUrl?: string;
 };
 
+export type SupportedChainId = 42161 | 421614 | 5042 | 5042002;
+/** @deprecated Use SupportedChainId. */
 export type SupportedArbitrumChainId = 42161 | 421614;
 
 export type Bounty = {

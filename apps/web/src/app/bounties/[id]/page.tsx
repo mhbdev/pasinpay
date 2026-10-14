@@ -12,10 +12,10 @@ export async function generateMetadata({
 	const bounty = await getPublicBounty(id);
 	const title = bounty ? `${bounty.title} · PasinPay` : "Bounty · PasinPay";
 	const description = bounty?.isPrivate
-		? `A password protected ${bounty.amount} USDG bounty. Join to view details.`
+		? `A password protected ${bounty.amount} ${bounty.tokenSymbol ?? "stablecoin"} bounty. Join to view details.`
 		: bounty
-			? `A ${bounty.amount} USDG bounty for ${bounty.repository} issue #${bounty.issueNumber}.`
-			: "Fund verified GitHub work with USDG on Arbitrum.";
+			? `A ${bounty.amount} ${bounty.tokenSymbol ?? "stablecoin"} bounty for ${bounty.repository} issue #${bounty.issueNumber}.`
+			: "Fund verified GitHub work on supported EVM networks.";
 	const url = `/bounties/${id}`;
 
 	return {

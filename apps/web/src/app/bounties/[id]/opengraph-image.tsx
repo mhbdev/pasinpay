@@ -35,10 +35,10 @@ export default async function OpenGraphImage({
 				</div>
 				<div style={{ color: "#666666", display: "flex", fontSize: 28 }}>
 					{bounty?.isPrivate
-						? `${bounty.amount} USDG · Private bounty`
+						? `${bounty.amount} ${bounty.tokenSymbol ?? "stablecoin"} · Private bounty`
 						: bounty
-							? `${bounty.amount} USDG · ${bounty.repository} · Issue #${bounty.issueNumber}`
-							: "USDG escrow on Arbitrum"}
+							? `${bounty.amount} ${bounty.tokenSymbol ?? "stablecoin"} · ${bounty.repository} · Issue #${bounty.issueNumber}`
+							: "Stablecoin escrow on supported EVM networks"}
 				</div>
 			</div>
 		</div>,

@@ -1,69 +1,117 @@
-import { type ChainConfig, DEFAULT_CHAIN_CONFIG } from "@pasinpay/chain";
+import {
+	ARBITRUM_ID,
+	ARBITRUM_MAINNET_CONFIG,
+	ARBITRUM_SEPOLIA_ID,
+	ARC_MAINNET_CONFIG,
+	ARC_MAINNET_ID,
+	ARC_TESTNET_CONFIG,
+	ARC_TESTNET_ID,
+	arbitrum,
+	arbitrumSepolia,
+	arc,
+	arcTestnet,
+	type ChainConfig,
+	DEFAULT_CHAIN_CONFIG,
+	SUPPORTED_CHAIN_IDS,
+} from "@pasinpay/chain";
 import { http } from "viem";
-import { arbitrum, arbitrumSepolia } from "viem/chains";
 import { createConfig } from "wagmi";
 import { injected } from "wagmi/connectors";
 
-export const walletConfig = createConfig({
-	chains: [arbitrumSepolia, arbitrum],
-	connectors: [injected()],
-	transports: { [arbitrumSepolia.id]: http(), [arbitrum.id]: http() },
-});
-
-export type WebChainId = typeof arbitrum.id | typeof arbitrumSepolia.id;
-
 const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
 
-function configuredAddress(value: string | undefined) {
-	return (value ?? zeroAddress) as `0x${string}`;
+function configuredAddress(
+	value: string | undefined,
+	fallback: `0x${string}` = zeroAddress,
+) {
+	return (value ?? fallback) as `0x${string}`;
 }
 
-const configuredDefaultChainId = Number(
-	process.env.NEXT_PUBLIC_CHAIN_ID ?? arbitrumSepolia.id,
-);
-export const defaultWebChainId: WebChainId =
-	configuredDefaultChainId === arbitrum.id ? arbitrum.id : arbitrumSepolia.id;
+export type WebChainId = (typeof SUPPORTED_CHAIN_IDS)[number];
 
 export const webChainConfigs: Record<WebChainId, ChainConfig> = {
-	[arbitrumSepolia.id]: {
-		id: arbitrumSepolia.id,
-		name: "Arbitrum Sepolia",
+	[ARBITRUM_SEPOLIA_ID]: {
+		...DEFAULT_CHAIN_CONFIG,
 		escrowAddress: configuredAddress(
 			process.env.NEXT_PUBLIC_SEPOLIA_ESCROW_ADDRESS ??
-				process.env.NEXT_PUBLIC_ESCROW_ADDRESS ??
-				DEFAULT_CHAIN_CONFIG.escrowAddress,
+				process.env.NEXT_PUBLIC_ESCROW_ADDRESS,
+			DEFAULT_CHAIN_CONFIG.escrowAddress,
 		),
-		usdgAddress: configuredAddress(
+		tokenAddress: configuredAddress(
 			process.env.NEXT_PUBLIC_SEPOLIA_USDG_ADDRESS ??
-				process.env.NEXT_PUBLIC_USDG_ADDRESS ??
-				"0xFFC95faa3d63Cde504a05B567C600B78C0b41892",
+				process.env.NEXT_PUBLIC_USDG_ADDRESS,
+			DEFAULT_CHAIN_CONFIG.tokenAddress,
 		),
 		feeTreasury: configuredAddress(
 			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
 		),
-		feeBps: 250,
-		explorerUrl: "https://sepolia.arbiscan.io",
 	},
-	[arbitrum.id]: {
-		id: arbitrum.id,
-		name: "Arbitrum One",
+	[ARBITRUM_ID]: {
+		...ARBITRUM_MAINNET_CONFIG,
 		escrowAddress: configuredAddress(
 			process.env.NEXT_PUBLIC_MAINNET_ESCROW_ADDRESS,
 		),
-		usdgAddress: configuredAddress(
-			process.env.NEXT_PUBLIC_MAINNET_USDG_ADDRESS ??
-				"0x004B506865409877C9fA29bfb1ebA929984B9bbC",
+		tokenAddress: configuredAddress(
+			process.env.NEXT_PUBLIC_MAINNET_USDG_ADDRESS,
+			ARBITRUM_MAINNET_CONFIG.tokenAddress,
 		),
 		feeTreasury: configuredAddress(
 			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
 		),
-		feeBps: 250,
-		explorerUrl: "https://arbiscan.io",
+	},
+	[ARC_TESTNET_ID]: {
+		...ARC_TESTNET_CONFIG,
+		escrowAddress: configuredAddress(
+			process.env.NEXT_PUBLIC_ARC_TESTNET_ESCROW_ADDRESS,
+			ARC_TESTNET_CONFIG.escrowAddress,
+		),
+		tokenAddress: configuredAddress(
+			process.env.NEXT_PUBLIC_ARC_TESTNET_USDC_ADDRESS,
+			ARC_TESTNET_CONFIG.tokenAddress,
+		),
+		feeTreasury: configuredAddress(
+			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
+			ARC_TESTNET_CONFIG.feeTreasury,
+		),
+	},
+	[ARC_MAINNET_ID]: {
+		...ARC_MAINNET_CONFIG,
+		escrowAddress: configuredAddress(
+			process.env.NEXT_PUBLIC_ARC_MAINNET_ESCROW_ADDRESS,
+		),
+		tokenAddress: configuredAddress(
+			process.env.NEXT_PUBLIC_ARC_MAINNET_USDC_ADDRESS,
+			ARC_MAINNET_CONFIG.tokenAddress,
+		),
+		feeTreasury: configuredAddress(
+			process.env.NEXT_PUBLIC_FEE_TREASURY_ADDRESS,
+		),
 	},
 };
 
+const configuredDefaultChainId = Number(
+	process.env.NEXT_PUBLIC_CHAIN_ID ?? ARBITRUM_SEPOLIA_ID,
+);
+export const defaultWebChainId: WebChainId = SUPPORTED_CHAIN_IDS.includes(
+	configuredDefaultChainId as WebChainId,
+)
+	? (configuredDefaultChainId as WebChainId)
+	: ARBITRUM_SEPOLIA_ID;
+
+export const walletConfig = createConfig({
+	chains: [arbitrumSepolia, arbitrum, arcTestnet, arc],
+	connectors: [injected()],
+	transports: {
+		[arbitrumSepolia.id]: http(),
+		[arbitrum.id]: http(),
+		[arcTestnet.id]: http(),
+		[arc.id]: http(),
+	},
+});
+
 export const webChainConfig = webChainConfigs[defaultWebChainId];
 
+/** This web build talks to one chain-specific backend deployment at a time. */
 export function isWebChainConfigured(chainId: WebChainId) {
 	return (
 		chainId === defaultWebChainId &&
@@ -71,4 +119,6 @@ export function isWebChainConfigured(chainId: WebChainId) {
 	);
 }
 
-export const activeChain = arbitrumSepolia;
+export const activeChain =
+	walletConfig.chains.find((chain) => chain.id === defaultWebChainId) ??
+	arbitrumSepolia;

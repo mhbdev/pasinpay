@@ -82,6 +82,7 @@ import {
 } from "@/lib/bounty-ui-state";
 import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
+import { type WebChainId, webChainConfigs } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 const statusLabels: Record<string, string> = {
@@ -253,16 +254,20 @@ export default function BountyDetailPage() {
 	);
 	const { address, chainId } = useAccount();
 	const { chainConfig } = useAppNetwork();
-	const client = usePublicClient({ chainId: chainConfig.id });
-	const { switchChainAsync } = useSwitchChain();
-	const { writeContractAsync } = useWriteContract();
-	const queryClient = useQueryClient();
 	const fullBounty =
 		bounty && !bounty.isLocked && (!bounty.isPrivate || session)
 			? bounty
 			: undefined;
+	const bountyChainId = (fullBounty?.chain.id ?? chainConfig.id) as WebChainId;
+	const bountyChainConfig = fullBounty
+		? { ...webChainConfigs[bountyChainId], ...fullBounty.chain }
+		: chainConfig;
+	const client = usePublicClient({ chainId: bountyChainId });
+	const { switchChainAsync } = useSwitchChain();
+	const { writeContractAsync } = useWriteContract();
+	const queryClient = useQueryClient();
 	const bountyEscrowAddress = (fullBounty?.chain.escrowAddress ??
-		chainConfig.escrowAddress) as Address;
+		bountyChainConfig.escrowAddress) as Address;
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
@@ -279,7 +284,7 @@ export default function BountyDetailPage() {
 			abi: escrowAbi,
 			functionName: "bounties",
 			args: onchainBountyId === undefined ? undefined : [onchainBountyId],
-			chainId: chainConfig.id,
+			chainId: bountyChainId,
 			query: {
 				enabled:
 					onchainBountyId !== undefined && bountyEscrowAddress !== ZERO_ADDRESS,
@@ -353,11 +358,11 @@ export default function BountyDetailPage() {
 		setError(null);
 		setTransaction(null);
 		try {
-			if (chainId !== chainConfig.id)
-				await switchChainAsync({ chainId: chainConfig.id });
+			if (chainId !== bountyChainId)
+				await switchChainAsync({ chainId: bountyChainId });
 			if (bountyEscrowAddress === "0x0000000000000000000000000000000000000000")
 				throw new Error(
-					`${chainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
+					`${bountyChainConfig.name} is available for wallet connections, but its PasinPay escrow contract has not been deployed yet.`,
 				);
 			if (functionName === "submitClaim") {
 				if (!claim)
@@ -420,6 +425,7 @@ export default function BountyDetailPage() {
 				});
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
+						chainId: bountyChainId,
 						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
@@ -440,6 +446,7 @@ export default function BountyDetailPage() {
 			} else if (functionName === "refundExpired") {
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
+						chainId: bountyChainId,
 						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
@@ -462,6 +469,7 @@ export default function BountyDetailPage() {
 					throw new Error("Only the bounty creator can manage this bounty.");
 				const hash = await writeWithFreshEip1559Fees(client, (fees) =>
 					writeContractAsync({
+						chainId: bountyChainId,
 						address: bountyEscrowAddress,
 						abi: escrowAbi,
 						functionName,
@@ -522,6 +530,7 @@ export default function BountyDetailPage() {
 				</Link>
 			</main>
 		);
+	const tokenSymbol = bounty.tokenSymbol ?? "USDG";
 	if (bounty.isLocked || (bounty.isPrivate && !session))
 		return (
 			<main className="mx-auto max-w-xl px-5 py-16">
@@ -531,7 +540,7 @@ export default function BountyDetailPage() {
 							<LockKeyhole className="size-5" /> Private bounty
 						</CardTitle>
 						<p className="text-muted-foreground text-sm">
-							{bounty.title} · {bounty.amount} USDG
+							{bounty.title} · {bounty.amount} {tokenSymbol}
 						</p>
 					</CardHeader>
 					<CardContent>
@@ -579,9 +588,10 @@ export default function BountyDetailPage() {
 		: null;
 	const currentStatus = optimisticStatus ?? onchainStatus ?? bounty.status;
 	const status = statusLabels[currentStatus] ?? currentStatus.toUpperCase();
+	const chain = bounty.chain;
 	const steps = [
 		"Bounty created",
-		"USDG funded",
+		`${tokenSymbol} funded`,
 		"PR opened",
 		"PR merged",
 		"Evidence verified",
@@ -599,7 +609,6 @@ export default function BountyDetailPage() {
 		hasOpenPullRequest: Boolean(hasOpenPullRequest),
 	});
 	const completed = progressComplete.filter(Boolean).length;
-	const chain = bounty.chain;
 	const issueUrl =
 		bounty.issueUrl ||
 		`https://github.com/${bounty.repository}/issues/${bounty.issueNumber}`;
@@ -687,7 +696,7 @@ export default function BountyDetailPage() {
 		`Repository: https://github.com/${bounty.repository}`,
 		`Issue: ${issueUrl}`,
 		`Bounty status: ${currentStatus}`,
-		`Reward: ${bounty.amount} USDG before any applicable platform fee`,
+		`Reward: ${bounty.amount} ${tokenSymbol} before any applicable platform fee`,
 		"",
 		`Read the issue carefully, implement the smallest production-quality change, add or update tests, and run the repository's checks before opening a pull request.`,
 		`Open the pull request with a title beginning exactly with [PasinPay #${bounty.issueNumber}]. Link the issue and describe the validation performed. Do not include secrets, private keys, or wallet credentials in the repository.`,
@@ -1087,7 +1096,9 @@ export default function BountyDetailPage() {
 								disabled={Boolean(busy)}
 								onClick={() => call("submitClaim")}
 							>
-								{busy === "submitClaim" ? "Submitting…" : "Claim USDG"}
+								{busy === "submitClaim"
+									? "Submitting…"
+									: `Claim ${tokenSymbol}`}
 								<ArrowUpRight data-icon="inline-end" />
 							</Button>
 						)}

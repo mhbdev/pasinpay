@@ -1,5 +1,6 @@
 "use client";
 
+import { SUPPORTED_CHAIN_IDS } from "@pasinpay/chain";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -33,6 +34,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
 import { getReadableError } from "@/lib/errors";
+import { walletConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
 export default function SettingsPage() {
@@ -119,9 +121,13 @@ export default function SettingsPage() {
 				await switchChainAsync({ chainId: chainConfig.id });
 				linkedChainId = chainConfig.id;
 			}
-			if (linkedChainId !== 421614 && linkedChainId !== 42161)
+			if (
+				!SUPPORTED_CHAIN_IDS.includes(
+					linkedChainId as (typeof SUPPORTED_CHAIN_IDS)[number],
+				)
+			)
 				return setMessage(
-					"Switch to Arbitrum One or Arbitrum Sepolia before linking your wallet.",
+					"Switch to a supported PasinPay network before linking your wallet.",
 				);
 			const result = await challenge.mutateAsync({
 				address: linkedAddress,
@@ -307,11 +313,8 @@ export default function SettingsPage() {
 											: "No wallet connected"}
 								</p>
 								<p className="mt-1 text-muted-foreground text-sm">
-									{chainId === 42161
-										? "Arbitrum One"
-										: chainId === 421614
-											? "Arbitrum Sepolia"
-											: "Network not connected"}
+									{walletConfig.chains.find((chain) => chain.id === chainId)
+										?.name ?? "Network not connected"}
 								</p>
 							</div>
 							<Button

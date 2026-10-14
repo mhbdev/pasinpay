@@ -34,6 +34,7 @@
 		"check-types": "turbo run check-types",
 		"generate:dokploy-env": "bun scripts/generate-dokploy-env.ts",
 		"test": "turbo run test",
+		"smoke:arc": "bun run --filter @pasinpay/chain smoke:arc",
 		"dev:web": "turbo run dev -F web --",
 		"dev:server": "turbo run dev -F server --",
 		"db:push": "turbo run db:push -F @pasinpay/db --",

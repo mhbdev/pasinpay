@@ -1,17 +1,15 @@
+import type { Eip1559Fees } from "@pasinpay/chain";
+import { getEip1559FeeQuote } from "@pasinpay/chain";
 import type { PublicClient } from "viem";
 
-export type Eip1559Fees = {
-	maxFeePerGas: bigint;
-	maxPriorityFeePerGas: bigint;
-};
+export type { Eip1559Fees } from "@pasinpay/chain";
 
-type FeeClient = Pick<PublicClient, "estimateFeesPerGas" | "getBlock">;
+type FeeClient = Pick<
+	PublicClient,
+	"estimateFeesPerGas" | "getBlock" | "chain"
+>;
 
 const MAX_FEE_RETRY_MESSAGE = "max fee per gas less than block base fee";
-
-function max(left: bigint, right: bigint) {
-	return left > right ? left : right;
-}
 
 /**
  * Builds a fee quote from the latest block as well as the RPC fee estimate.
@@ -26,15 +24,9 @@ export async function getFreshEip1559Fees(
 		client.getBlock({ blockTag: "latest" }),
 		client.estimateFeesPerGas(),
 	]);
-	const maxPriorityFeePerGas = estimate.maxPriorityFeePerGas ?? BigInt(0);
-	const estimatedMaxFeePerGas = estimate.maxFeePerGas ?? BigInt(0);
-	const baseFeePerGas = block.baseFeePerGas ?? estimatedMaxFeePerGas;
-	const maxFeePerGas = max(
-		estimatedMaxFeePerGas,
-		baseFeePerGas * BigInt(2) + maxPriorityFeePerGas,
-	);
-
-	return { maxFeePerGas, maxPriorityFeePerGas };
+	const baseFeePerGas =
+		block.baseFeePerGas ?? estimate.maxFeePerGas ?? BigInt(0);
+	return getEip1559FeeQuote(client.chain?.id ?? 0, baseFeePerGas, estimate);
 }
 
 export function isStaleEip1559FeeError(error: unknown) {

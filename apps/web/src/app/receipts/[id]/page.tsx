@@ -111,7 +111,8 @@ export default function ReceiptPage() {
 					Payment settled.
 				</h1>
 				<p className="mt-3 text-muted-foreground">
-					A public receipt connecting the merged code to its USDG settlement.
+					A public receipt connecting the merged code to its stablecoin
+					settlement.
 				</p>
 			</div>
 			<Card>

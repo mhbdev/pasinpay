@@ -1,6 +1,7 @@
 export type PublicBounty = {
 	title: string;
 	amount: string;
+	tokenSymbol?: string;
 	isPrivate?: boolean;
 	isLocked?: boolean;
 	repository?: string;

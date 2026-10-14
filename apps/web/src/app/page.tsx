@@ -23,7 +23,7 @@ import Link from "next/link";
 import { trpc } from "@/utils/trpc";
 
 const steps = [
-	["01", "Fund", "Create a GitHub task and lock USDG in escrow."],
+	["01", "Fund", "Create a GitHub task and lock stablecoins in escrow."],
 	["02", "Build", "Ship the work in a pull request."],
 	["03", "Merge", "The maintainer merges the approved change."],
 	["04", "Get paid", "Verified evidence unlocks the settlement."],
@@ -55,14 +55,14 @@ export default function Home() {
 				<div className="flex flex-col gap-7">
 					<div className="flex w-fit items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-muted-foreground text-xs">
 						<span className="size-1.5 rounded-full bg-emerald-500" />{" "}
-						GitHub-native settlement on Arbitrum
+						GitHub-native settlement on EVM networks
 					</div>
 					<h1 className="max-w-2xl font-semibold text-5xl tracking-[-0.05em] sm:text-7xl">
 						Pay for shipped code, automatically.
 					</h1>
 					<p className="max-w-xl text-lg text-muted-foreground leading-8">
-						Fund GitHub work in USDG. When the approved pull request merges,
-						PasinPay turns the work into a verifiable payment on Arbitrum.
+						Fund GitHub work with stablecoins. When the approved pull request
+						merges, PasinPay turns the work into a verifiable on-chain payment.
 					</p>
 					<div className="flex flex-wrap gap-3">
 						<Button
@@ -86,7 +86,7 @@ export default function Home() {
 							<ShieldCheck className="size-4" /> EIP-712 evidence
 						</span>
 						<span className="flex items-center gap-2">
-							<WalletCards className="size-4" /> USDG escrow
+							<WalletCards className="size-4" /> Stablecoin escrow
 						</span>
 					</div>
 				</div>
@@ -110,14 +110,14 @@ export default function Home() {
 						<div className="font-semibold text-4xl tracking-tight">
 							$500{" "}
 							<span className="font-medium text-base text-muted-foreground">
-								USDG
+								USDC / USDG
 							</span>
 						</div>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-4">
 						{[
 							"Bounty created",
-							"USDG funded",
+							"Stablecoin funded",
 							"PR opened",
 							"PR merged",
 							"Evidence verified",
@@ -226,8 +226,8 @@ export default function Home() {
 							<WalletCards className="size-5" />
 							<h3 className="font-medium">Non-custodial escrow</h3>
 							<p className="text-muted-foreground text-sm leading-6">
-								USDG stays in the contract until the creator approves the
-								verified work.
+								Reward tokens stay in the contract until the creator approves
+								the verified work.
 							</p>
 						</CardContent>
 					</Card>
@@ -236,7 +236,7 @@ export default function Home() {
 							<ShieldCheck className="size-5" />
 							<h3 className="font-medium">A public receipt</h3>
 							<p className="text-muted-foreground text-sm leading-6">
-								Every settlement links the shipped code to a real Arbitrum
+								Every settlement links the shipped code to an EVM transaction
 								transaction.
 							</p>
 						</CardContent>
@@ -258,9 +258,9 @@ export default function Home() {
 							payments in PasinPay; your agent works in its own environment.
 						</p>
 						<p className="max-w-xl text-muted-foreground text-sm leading-6">
-							USDG x402 funding is available on Arbitrum Sepolia. You review the
-							bounty and approve its payment in your wallet; mainnet agent
-							funding is not enabled yet.
+							Testnet x402 funding is available on supported networks. You
+							review the bounty and approve its payment in your wallet; mainnet
+							agent funding is not enabled yet.
 						</p>
 						<Button
 							render={<Link href="/bounties" />}
@@ -287,8 +287,8 @@ export default function Home() {
 								<WalletCards className="size-5" />
 								<h3 className="font-medium">You approve the payment</h3>
 								<p className="text-muted-foreground text-sm leading-6">
-									Review bounty details and authorize USDG funding in PasinPay
-									before any money moves.
+									Review bounty details and authorize stablecoin funding in
+									PasinPay before any money moves.
 								</p>
 							</CardContent>
 						</Card>

@@ -14,20 +14,20 @@ export function UsdAmount({
 }) {
 	const { chainConfig, ready } = useAppNetwork();
 	const { data: decimals } = useReadContract({
-		address: chainConfig.usdgAddress,
+		address: chainConfig.tokenAddress,
 		abi: erc20MetadataAbi,
 		functionName: "decimals",
 		chainId: chainConfig.id,
 	});
 	const { data: symbol } = useReadContract({
-		address: chainConfig.usdgAddress,
+		address: chainConfig.tokenAddress,
 		abi: erc20MetadataAbi,
 		functionName: "symbol",
 		chainId: chainConfig.id,
 	});
 	let value: string | null = null;
 	try {
-		if (ready && decimals !== undefined && symbol === "USDG") {
+		if (ready && decimals !== undefined && symbol === chainConfig.tokenSymbol) {
 			value = formatUnits(BigInt(amount), decimals);
 		}
 	} catch {}
@@ -36,7 +36,7 @@ export function UsdAmount({
 			{value === null
 				? "—"
 				: `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}{" "}
-			USDG
+			{chainConfig.tokenSymbol}
 		</span>
 	);
 }

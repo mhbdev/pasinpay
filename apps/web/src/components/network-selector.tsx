@@ -1,6 +1,12 @@
 "use client";
 
 import {
+	ARBITRUM_ID,
+	ARBITRUM_SEPOLIA_ID,
+	ARC_MAINNET_ID,
+	ARC_TESTNET_ID,
+} from "@pasinpay/chain";
+import {
 	Select,
 	SelectContent,
 	SelectItem,
@@ -17,14 +23,14 @@ export function NetworkSelector() {
 	return (
 		<div className="flex items-center">
 			<Select
-				value={ready ? String(chainId) : String(421614)}
+				value={ready ? String(chainId) : String(ARBITRUM_SEPOLIA_ID)}
 				onValueChange={(value) => {
 					if (value) void selectNetwork(Number(value) as typeof chainId);
 				}}
 				disabled={!ready || switching}
 			>
 				<SelectTrigger
-					aria-label="Select Arbitrum network"
+					aria-label="Select blockchain network"
 					size="sm"
 					className="w-[132px] text-xs sm:w-[190px]"
 					title={error ?? undefined}
@@ -35,7 +41,13 @@ export function NetworkSelector() {
 						) : (
 							<>
 								<span className="sm:hidden">
-									{chainId === 421614 ? "Sepolia" : "Arbitrum One"}
+									{chainId === ARC_MAINNET_ID
+										? "Arc"
+										: chainId === ARC_TESTNET_ID
+											? "Arc Testnet"
+											: chainId === ARBITRUM_SEPOLIA_ID
+												? "Sepolia"
+												: "Arbitrum One"}
 								</span>
 								<span className="hidden sm:inline">{chainConfig.name}</span>
 							</>
@@ -43,11 +55,29 @@ export function NetworkSelector() {
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContent className="min-w-[190px]">
-					<SelectItem value="421614" disabled={!isWebChainConfigured(421614)}>
+					<SelectItem
+						value={String(ARBITRUM_SEPOLIA_ID)}
+						disabled={!isWebChainConfigured(ARBITRUM_SEPOLIA_ID)}
+					>
 						Arbitrum Sepolia · Testnet
 					</SelectItem>
-					<SelectItem value="42161" disabled={!isWebChainConfigured(42161)}>
-						Arbitrum One · Mainnet · not enabled
+					<SelectItem
+						value={String(ARBITRUM_ID)}
+						disabled={!isWebChainConfigured(ARBITRUM_ID)}
+					>
+						Arbitrum One · Mainnet
+					</SelectItem>
+					<SelectItem
+						value={String(ARC_TESTNET_ID)}
+						disabled={!isWebChainConfigured(ARC_TESTNET_ID)}
+					>
+						Arc Testnet
+					</SelectItem>
+					<SelectItem
+						value={String(ARC_MAINNET_ID)}
+						disabled={!isWebChainConfigured(ARC_MAINNET_ID)}
+					>
+						Arc · Mainnet
 					</SelectItem>
 				</SelectContent>
 			</Select>

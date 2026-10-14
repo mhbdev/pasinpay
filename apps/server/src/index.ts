@@ -1,6 +1,11 @@
 import { trpcServer } from "@hono/trpc-server";
 import { appRouter } from "@pasinpay/api/routers/index";
-import { assertUsdGToken, supportsX402Funding } from "@pasinpay/chain";
+import {
+	ARBITRUM_SEPOLIA_ID,
+	ARC_TESTNET_ID,
+	assertConfiguredToken,
+	supportsX402Funding,
+} from "@pasinpay/chain";
 import { sql } from "drizzle-orm";
 import { initLogger } from "evlog";
 import {
@@ -93,12 +98,17 @@ app.get("/api/health", (c) => c.json({ ok: true, service: "pasinpay-server" }));
 app.get("/api/readiness", async (c) => {
 	try {
 		await db.execute(sql`select 1`);
-		await publicClient.getChainId();
-		const token = await assertUsdGToken(publicClient, chainConfig);
+		const connectedChainId = await publicClient.getChainId();
+		if (connectedChainId !== chainConfig.id) {
+			throw new Error(
+				`RPC connected to chain ${connectedChainId}; configured chain is ${chainConfig.id}`,
+			);
+		}
+		const token = await assertConfiguredToken(publicClient, chainConfig);
 		let attestorMatchesContract = false;
 		if (
 			ENV.PASINPAY_ATTESTOR_PRIVATE_KEY &&
-			!/^0x0{40}$/i.test(ENV.PASINPAY_ESCROW_ADDRESS)
+			!/^0x0{40}$/i.test(chainConfig.escrowAddress)
 		) {
 			try {
 				await assertAttestorMatchesContract();
@@ -122,18 +132,21 @@ app.get("/api/readiness", async (c) => {
 			escrow: !/^0x0{40}$/i.test(chainConfig.escrowAddress),
 			attestor: Boolean(ENV.PASINPAY_ATTESTOR_PRIVATE_KEY),
 			attestorMatchesContract,
-			x402Sepolia:
-				chainConfig.id === 421614 &&
+			x402Testnet:
+				(chainConfig.id === ARBITRUM_SEPOLIA_ID ||
+					chainConfig.id === ARC_TESTNET_ID) &&
 				x402Adapter &&
 				Boolean(ENV.PASINPAY_X402_RELAYER_PRIVATE_KEY) &&
 				/^\d+$/.test(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK) &&
 				BigInt(ENV.PASINPAY_ESCROW_DEPLOYMENT_BLOCK) > 0n,
 		};
-		const { x402Sepolia, ...requiredConfiguration } = configuration;
+		const { x402Testnet, ...requiredConfiguration } = configuration;
 		if (
 			ENV.NODE_ENV === "production" &&
 			(Object.values(requiredConfiguration).some((configured) => !configured) ||
-				(chainConfig.id === 421614 && !x402Sepolia))
+				((chainConfig.id === ARBITRUM_SEPOLIA_ID ||
+					chainConfig.id === ARC_TESTNET_ID) &&
+					!x402Testnet))
 		) {
 			return c.json(
 				{ ok: false, database: true, chain: true, token, configuration },

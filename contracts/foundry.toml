@@ -14,6 +14,7 @@ runs = 256
 
 [rpc_endpoints]
 arbitrum_sepolia = "${PASINPAY_RPC_URL}"
+arc = "https://rpc.testnet.arc.io"
 
 [etherscan]
 arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", chain = 421614, url = "https://api-sepolia.arbiscan.io/api" }

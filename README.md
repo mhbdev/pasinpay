@@ -1,172 +1,137 @@
 # PasinPay
 
-Pay for shipped code, automatically.
+PasinPay connects accepted GitHub work to on-chain bounty payments. A creator chooses an issue, funds an escrow, and PasinPay verifies a merged pull request before issuing a claim attestation. The contributor claims the reward onchain after the creator's review window.
 
-PasinPay connects merged GitHub work to programmable USDG settlement on Arbitrum. The repository now contains the end-to-end foundation: escrow contract, EIP-712 attestations, GitHub webhook worker, Better Auth wallet linking, database index, and Next.js product UI.
-
-## Quick start
-
-```bash
-bun install
-bun run env:generate
-bun run db:start
-bun run dev
-```
-
-Copy the `.env.example` files into local `.env` files and fill in the GitHub OAuth/App values when testing the real webhook flow. The UI defaults to Arbitrum Sepolia and reads USDG decimals from the token contract.
-
-## Smart contract
-
-```bash
-cd contracts
-forge install OpenZeppelin/openzeppelin-contracts --no-commit
-forge test
-forge script script/Deploy.s.sol --rpc-url "$PASINPAY_RPC_URL" --broadcast
-```
-
-The escrow accepts only the configured USDG token, validates EIP-712 claims, prevents nonce replay and double payment, and enforces creator approval plus the review window. Transfer ownership to a Safe before using a deployment with value-bearing assets.
-
-## Architecture
-
-See [docs/architecture.md](docs/architecture.md) for the service boundaries, webhook flow, operational requirements, and production deployment checklist.
-
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Hono, TRPC, and more.
+The repository contains the web app, API and worker, database schema, agent-facing MCP API, and Solidity escrow. See [docs/architecture.md](docs/architecture.md) for how the services work together and [docs/production.md](docs/production.md) before deploying.
 
 ## Features
 
-- **TypeScript** - For type safety and improved developer experience
-- **Next.js** - Full-stack React framework
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Hono** - Lightweight, performant server framework
-- **tRPC** - End-to-end type-safe APIs
-- **Bun** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Biome** - Linting and formatting
-- **Husky** - Git hooks for code quality
-- **PWA** - Progressive Web App support
-- **Turborepo** - Optimized monorepo build system
+- Create, fund, review, and settle GitHub issue bounties.
+- Link a GitHub identity and payout wallet to a PasinPay account.
+- Optionally protect a bounty with a joining password. Protected bounty listings show only the title and reward; users must authenticate and join to read details or participate. Password enrollment does not grant access to the private GitHub repository; its owner must grant repository access separately.
+- Verify merged pull request evidence through a GitHub App and issue EIP-712 claim attestations.
+- Offer bounties and payouts through an ERC-20 escrow contract.
+- Expose bounty discovery and password joining to authenticated agents through the Streamable HTTP MCP endpoint.
+- Support optional testnet x402 bounty funding with EIP-3009 token authorizations.
 
-## Getting Started
+Public blockchain state is inspectable by anyone. Password protection gates PasinPay's bounty details and participation APIs; it does not make onchain transactions or data private.
 
-First, install the dependencies:
+## Supported networks
+
+Each API/worker deployment and web build targets one network at a time. Set the same chain ID, token, and escrow configuration in the API and web build. Wallet settings include all supported chains, but transactions are enabled only for the chain configured in that build and only when its escrow address is nonzero.
+
+| Network | Chain ID | Bounty token | Token decimals | Default explorer |
+| --- | ---: | --- | ---: | --- |
+| Arbitrum Sepolia | `421614` | USDG | 6 | [Arbiscan Sepolia](https://sepolia.arbiscan.io) |
+| Arbitrum One | `42161` | USDG | 6 | [Arbiscan](https://arbiscan.io) |
+| Arc Testnet | `5042002` | USDC | 6 | [Arc Testnet Explorer](https://explorer.testnet.arc.io) |
+| Arc Mainnet | `5042` | USDC | 6 | [Arc Explorer](https://explorer.arc.io) |
+
+Arc's native gas currency is USDC, represented with 18 decimals for gas accounting; the USDC ERC-20 interface used for bounty amounts has 6 decimals. PasinPay reads the ERC-20 token metadata at startup. Arc RPC defaults are `https://rpc.testnet.arc.io` and `https://rpc.mainnet.arc.io`; set `PASINPAY_RPC_URL` to use a provider endpoint of your choice. Arc USDC's configured contract is `0x3600000000000000000000000000000000000000` on both networks. Review [Arc's EVM differences](https://docs.arc.io/arc/references/evm-differences) before extending or deploying contracts there. The fee helper observes Arc's minimum 20 Gwei max fee requirement. Arc-specific execution should be tested with [Arc Foundry](https://docs.arc.io/arc/references/evm-differences#execution-and-opcode-differences) (`arc-anvil --network arc`) rather than vanilla Anvil, which does not reproduce Arc's EVM behavior.
+
+Arc Testnet is deployed and supports the same escrow creation, funding, attested claim, approval, payout, and x402 EIP-3009 flows as Arbitrum Sepolia. Its escrow is `0x1bc0ace2be823c5c94df45dd6ee7d20624f03d21`; the deployment and onchain acceptance transactions are recorded in [docs/production.md](docs/production.md). Arc Mainnet remains disabled until a separate escrow deployment and production review. Hosted x402 settlement is testnet-only.
+
+## Local development
+
+### Requirements
+
+- [Bun](https://bun.sh) `1.4.2` (the version declared in `package.json`).
+- Docker Compose for the local PostgreSQL database, or a compatible PostgreSQL instance.
+- GitHub OAuth and GitHub App credentials to exercise login, repository synchronization, and webhook flows.
+- Foundry (`forge`) for Arbitrum contract work, and Arc Foundry (`arc-forge`) for Arc runtime testing and deployment.
+
+### Start the application
 
 ```bash
 bun install
-```
-
-## Database Setup
-
-This project uses PostgreSQL with Drizzle ORM.
-
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
-
-3. Apply the schema to your database:
-
-```bash
-bun run db:push
-```
-
-Then, run the development server:
-
-```bash
+cp apps/server/.env.example apps/server/.env
+cp apps/web/.env.example apps/web/.env
+bun run env:generate
+bun run db:start
+bun run db:migrate
 bun run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+On Windows PowerShell, replace the two `cp` commands with `Copy-Item <source> <destination>`. Edit the app `.env` files with local values before starting the services. The server example points to local PostgreSQL and Arbitrum Sepolia; the web example uses the same default chain. Do not commit `.env` files or real credentials.
 
-## UI Customization
+The web app is at [http://localhost:3001](http://localhost:3001) and the API is at [http://localhost:3000](http://localhost:3000). The database is PostgreSQL on port `5432`. The local GitHub callback and GitHub App webhook URLs must be configured in GitHub if you want to exercise those flows end to end. Environment variable schemas live beside each app's example in `.env.schema`; after changing a schema, regenerate the environment accessors with `bun run env:generate`.
 
-React web apps in this stack share shadcn/ui primitives through `packages/ui`.
+The default example targets Arbitrum Sepolia. Arc Testnet's escrow and fee treasury are included in the chain defaults and can be selected by setting `PASINPAY_CHAIN_ID=5042002` / `NEXT_PUBLIC_CHAIN_ID=5042002`. Configure `PASINPAY_ESCROW_DEPLOYMENT_BLOCK=67146353` for Arc so event recovery starts at the deployed contract. Arc Mainnet escrow remains zero until a separately reviewed deployment exists. See the production guide for chain settings and deployment steps.
 
-- Change design tokens and global styles in `packages/ui/src/styles/globals.css`
-- Update shared primitives in `packages/ui/src/components/*`
-- Adjust shadcn aliases or style config in `packages/ui/components.json` and `apps/web/components.json`
+### Environment configuration
 
-### Add more shared components
+The server schema is [apps/server/.env.schema](apps/server/.env.schema), and the web schema is [apps/web/.env.schema](apps/web/.env.schema). Local environment files are loaded through Varlock; Bun's automatic `.env` loading is disabled. The web `NEXT_PUBLIC_*` settings are compiled into the web build and must be set at build time.
 
-Run this from the project root to add more primitives to the shared UI package:
+Important configuration groups:
+
+- Database and authentication: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and `CORS_ORIGIN`.
+- GitHub OAuth and App: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_WEBHOOK_SECRET`.
+- Active chain: `PASINPAY_CHAIN_ID`, `PASINPAY_RPC_URL`, the matching `PASINPAY_*_ESCROW_ADDRESS` and token address, `PASINPAY_ESCROW_DEPLOYMENT_BLOCK`, and matching web `NEXT_PUBLIC_*` settings.
+- Signing and settlement: `PASINPAY_ATTESTOR_PRIVATE_KEY`, `PASINPAY_X402_RELAYER_PRIVATE_KEY` (testnets only), and the configured fee treasury.
+
+Use unique production secrets from a secret manager. Never put attestor, relayer, deployer, GitHub App, or auth secrets in frontend variables or source control. The x402 relayer pays gas only; it cannot authorize a user's bounty funding.
+
+## Repository layout
+
+```text
+apps/
+  web/       Next.js app, wallet flows, and user interface
+  server/    Hono/tRPC API, Better Auth, GitHub webhook, MCP endpoint, and worker
+  fumadocs/  project documentation site
+packages/
+  api/       Bounty and account API procedures
+  auth/      Better Auth configuration
+  chain/     Chain configs, escrow ABI, and token validation
+  db/        Drizzle schema and PostgreSQL migrations
+  ui/        Shared UI components and styles
+contracts/
+  src/       Solidity escrow contract
+  script/    Foundry deployment scripts
+  test/      Solidity escrow tests
+docs/        Architecture, production, and agent integration guides
+```
+
+## Development checks
+
+Run from the repository root:
 
 ```bash
-npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
+bun run check-types
+bun run test
+bun run build
+bun run smoke:arc
 ```
 
-Import shared components like this:
+`bun run test` runs the workspace unit tests. `bun run smoke:arc` performs read-only live integration checks against all four configured chain RPCs and token interfaces, validates Arc EIP-3009 domains, and checks the deployed Arbitrum Sepolia x402 adapter; it requires network access. To run a package suite directly, use `bun run --filter <package-name> test` (for example, `bun run --filter web test`). For a non-mutating Biome check, pass the changed source paths to `bunx biome check <paths>`. `bun run check` applies fixes because its script includes `--write`; review its output diff.
 
-```tsx
-import { Button } from "@pasinpay/ui/components/button";
+For the Solidity suite (use Arc Foundry for Arc runtime behavior):
+
+```bash
+cd contracts
+forge test
+arc-forge test --network arc
 ```
 
-### Add app-specific blocks
+Contract deployment is documented in [contracts/README.md](contracts/README.md). The deployment script accepts `PASINPAY_TOKEN_ADDRESS`; `PASINPAY_USDG_ADDRESS` remains as a legacy alias for Arbitrum deployments. Do not deploy to a value-bearing network until the contract has an independent review, the owner is a Safe, and the production checklist is complete.
 
-If you want to add app-specific blocks instead of shared primitives, run the shadcn CLI from `apps/web`.
+## API and agent integration
 
-## Environment Configuration
+The Hono server exposes the tRPC API, GitHub webhook, readiness endpoints, and an authenticated Streamable HTTP MCP endpoint at `/mcp`. MCP tools support bounty discovery, bounty detail and issue reads, password joining, account setup checks, and preparing a draft for review in the web app. Draft preparation does not create or fund a bounty.
 
-Each app owns its environment schema in `.env.schema`. Varlock generates `src/env.ts` during installation; run `bun run env:generate` after changing a schema. Commit schemas, and keep secrets in ignored env files or your deployment platform.
+Read [docs/agentic-bounty-mcp.md](docs/agentic-bounty-mcp.md) for OAuth scopes, API key use, tool behavior, and x402 payment details. Read [docs/architecture.md](docs/architecture.md) for webhook verification, worker, and attestation flow.
 
-Import the generated `ENV` accessor in application code. Shared database and auth packages receive configuration or initialized clients from the application. See [Varlock's monorepo guide](https://varlock.dev/guides/monorepos/).
+## Database and migrations
 
-Bun's automatic env loading is disabled in `bunfig.toml`; the framework integration or server bootstrap loads Varlock. Node deployments must include Varlock and its dependencies alongside the app schema.
+PostgreSQL schema and migrations are in `packages/db`. Apply checked-in migrations with:
 
-Run standalone Node/Bun tools that use Varlock from the owning app directory so they load that app's schema and env files. `env:generate` only generates TypeScript files; it does not initialize environment values in a subsequent command.
-
-## Deployment
-
-### Docker Compose
-
-- Target: web + server
-- Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
-- Build images: bun run docker:build
-- Start: bun run docker:up
-- Logs: bun run docker:logs
-- Stop: bun run docker:down
-
-Environment variables are read from the Compose root `.env` when present, with each app's `.env` file as a local-development override. The root file is also mounted as the BuildKit environment secret so Dokploy can build from its generated Compose environment file; it is never committed. Public web variables are baked into the web build, while container networking values are overridden in `docker-compose.yml`.
-
-For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
-
-## Git Hooks and Formatting
-
-- Initialize hooks: `bun run prepare`
-- Run checks: `bun run check`
-
-## Project Structure
-
-```
-pasinpay/
-├── apps/
-│   ├── web/         # Frontend application (Next.js)
-│   └── server/      # Backend API (Hono, TRPC)
-├── packages/
-│   ├── ui/          # Shared shadcn/ui components and styles
-│   ├── api/         # API layer / business logic
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+```bash
+bun run db:migrate
 ```
 
-## Available Scripts
+Generate a migration after schema changes with `bun run db:generate`; review and commit the generated SQL. `bun run db:push` is available for local schema iteration, but production deployments should use reviewed migrations as a release step. `bun run db:studio` opens Drizzle Studio.
 
-- `bun run dev`: Start all applications in development mode
-- `bun run build`: Build all applications
-- `bun run dev:web`: Start only the web application
-- `bun run dev:server`: Start only the server
-- `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Push schema changes to database
-- `bun run db:generate`: Generate database client/types
-- `bun run db:migrate`: Run database migrations
-- `bun run db:studio`: Open database studio UI
-- `bun run check`: Run Biome formatting and linting
-- `cd apps/web && bun run generate-pwa-assets`: Generate PWA assets
-- `bun run docker:build`: Build the Docker Compose images
-- `bun run docker:up`: Build and start the Docker Compose stack
-- `bun run docker:logs`: Tail logs from the Docker Compose stack
-- `bun run docker:down`: Stop the Docker Compose stack
+## Production deployment
 
-## Better Auth Schema Generation
+See [docs/production.md](docs/production.md) for required GitHub configuration, network/token addresses, secret settings, deployment order, x402 behavior, and go-live checks. The Docker Compose helpers are `bun run docker:build`, `bun run docker:up`, `bun run docker:logs`, and `bun run docker:down`.
 
-After changing auth plugins or schema options, run `bun run auth:generate` from the project root. The script runs the Better Auth CLI through `varlock run` from the owning app directory, loading the auth instance from `src/services.ts`. Review the schema changes, then use your ORM's migration workflow to apply them.
+Mainnet use involves real assets and requires a reviewed escrow deployment, verified source, secure signer and owner key handling, backups, monitoring, and an independent smart-contract audit. Configuration support is not equivalent to a deployed or audited production integration.
