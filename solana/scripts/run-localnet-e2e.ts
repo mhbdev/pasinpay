@@ -76,15 +76,17 @@ const validatorCommand = [
 	'read -r validator_ip _ <<< "$(hostname -I)"',
 	'if [[ -z "$validator_ip" ]]; then echo "Could not determine the validator container IPv4 address" >&2; exit 1; fi',
 	'printf "Validator binding to container address %s\\n" "$validator_ip"',
-	"exec solana-test-validator",
-	"--reset",
-	`--ledger "/workspace/${ledgerDirectory}"`,
-	"--bpf-program",
-	programId,
-	"target/deploy/pasinpay_escrow.so",
-	"--rpc-port 8899",
-	"--faucet-port 9900",
-	'--bind-address "$validator_ip"',
+	[
+		"exec solana-test-validator",
+		"--reset",
+		`--ledger "/workspace/${ledgerDirectory}"`,
+		"--bpf-program",
+		programId,
+		"target/deploy/pasinpay_escrow.so",
+		"--rpc-port 8899",
+		"--faucet-port 9900",
+		'--bind-address "$validator_ip"',
+	].join(" "),
 ].join("; ");
 
 await run(
