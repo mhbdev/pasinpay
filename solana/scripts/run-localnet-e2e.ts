@@ -80,7 +80,7 @@ await run(
 		"-v",
 		`${projectRoot}:/workspace`,
 		"-w",
-		"/workspace/solana",
+		"/workspace",
 		image,
 		"cargo",
 		"build-sbf",
