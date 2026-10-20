@@ -123,6 +123,9 @@ try {
 		"--detach",
 		"--name",
 		containerName,
+		// Agave's validator requires io_uring, which the default Docker profile blocks.
+		"--security-opt",
+		"seccomp=unconfined",
 		"--publish",
 		"127.0.0.1:8899:8899",
 		"--volume",
