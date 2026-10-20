@@ -29,6 +29,7 @@ const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = resolve(projectRoot, "..");
 const image =
 	process.env.PASINPAY_ANCHOR_IMAGE ?? "quay.io/ottersec/anchor:v1.2.1";
+const toolchainCacheVolume = "pasinpay-solana-toolchain-cache";
 const rpcUrl =
 	process.env.PASINPAY_SOLANA_DEVNET_RPC_URL ?? SOLANA_DEVNET_RPC_URL;
 const authorityPath = resolve(projectRoot, "keys/devnet-authority.json");
@@ -131,6 +132,8 @@ if (mint.decimals !== 6)
 const containerArgs = [
 	"run",
 	"--rm",
+	"--volume",
+	`${toolchainCacheVolume}:/root/.cache/solana`,
 	"--volume",
 	`${repositoryRoot}:/workspace`,
 	"--workdir",

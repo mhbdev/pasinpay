@@ -7,6 +7,7 @@ import { Connection } from "@solana/web3.js";
 const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const image =
 	process.env.PASINPAY_ANCHOR_IMAGE ?? "quay.io/ottersec/anchor:v1.2.1";
+const toolchainCacheVolume = "pasinpay-solana-toolchain-cache";
 const rpcUrl = "http://127.0.0.1:8899";
 const connection = new Connection(rpcUrl, "confirmed");
 const containerName = `pasinpay-solana-e2e-${process.pid}`;
@@ -94,6 +95,8 @@ await run(
 	[
 		"run",
 		"--rm",
+		"--volume",
+		`${toolchainCacheVolume}:/root/.cache/solana`,
 		"-v",
 		`${projectRoot}:/workspace`,
 		"-w",
