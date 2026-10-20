@@ -126,8 +126,6 @@ try {
 		"8899",
 		"--faucet-port",
 		"9900",
-		"--rpc-bind-address",
-		"0.0.0.0",
 		"--bind-address",
 		"0.0.0.0",
 	]);
