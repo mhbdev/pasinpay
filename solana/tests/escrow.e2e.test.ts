@@ -238,14 +238,30 @@ async function createRecipientTokenAccounts(state: SolanaBountyState) {
 }
 
 async function waitForChainTime(timestamp: bigint) {
-	const timeout = Date.now() + 20_000;
+	const timeout = Date.now() + 90_000;
+	let lastObservedSlot: number | null = null;
+	let lastObservedBlockTime: number | null = null;
 	while (Date.now() < timeout) {
 		const slot = await connection.getSlot("confirmed");
 		const blockTime = await connection.getBlockTime(slot);
+		lastObservedSlot = slot;
+		lastObservedBlockTime = blockTime;
 		if (blockTime !== null && BigInt(blockTime) >= timestamp) return;
 		await new Promise((done) => setTimeout(done, 250));
 	}
-	throw new Error(`Local validator did not reach timestamp ${timestamp}`);
+	throw new Error(
+		`Local validator did not reach timestamp ${timestamp}; last confirmed slot ${lastObservedSlot} had block time ${lastObservedBlockTime}`,
+	);
+}
+
+async function getCurrentChainTimestamp() {
+	const slot = await connection.getSlot("confirmed");
+	const blockTime = await connection.getBlockTime(slot);
+	if (blockTime === null)
+		throw new Error(
+			`Local validator has no block time for confirmed slot ${slot}`,
+		);
+	return BigInt(blockTime);
 }
 
 describe("PasinPay Solana escrow end-to-end", () => {
@@ -607,7 +623,7 @@ describe("PasinPay Solana escrow end-to-end", () => {
 			(await getAccount(connection, new PublicKey(refundFeeToken))).amount,
 		).toBe(refundFeeBefore);
 
-		const expiredDeadline = BigInt(Math.floor(Date.now() / 1000) + 20);
+		const expiredDeadline = (await getCurrentChainTimestamp()) + BigInt(30);
 		const expired = await createBounty(4, expiredDeadline, BigInt(1));
 		const expiredTotals = await fundBounty(expired.id, BigInt(250_000));
 		const expiredCreatorBeforeRefund = (
