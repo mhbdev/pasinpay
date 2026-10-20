@@ -72,6 +72,20 @@ const programId = programSource.match(
 )?.[1];
 if (!programId)
 	throw new Error("Could not read the Anchor program ID from lib.rs");
+const validatorCommand = [
+	'read -r validator_ip _ <<< "$(hostname -I)"',
+	'if [[ -z "$validator_ip" ]]; then echo "Could not determine the validator container IPv4 address" >&2; exit 1; fi',
+	'printf "Validator binding to container address %s\\n" "$validator_ip"',
+	"exec solana-test-validator",
+	"--reset",
+	`--ledger "/workspace/${ledgerDirectory}"`,
+	"--bpf-program",
+	programId,
+	"target/deploy/pasinpay_escrow.so",
+	"--rpc-port 8899",
+	"--faucet-port 9900",
+	'--bind-address "$validator_ip"',
+].join("; ");
 
 await run(
 	"docker",
@@ -108,26 +122,16 @@ try {
 		"--name",
 		containerName,
 		"--publish",
-		"8899:8899",
+		"127.0.0.1:8899:8899",
 		"--volume",
 		`${projectRoot}:/workspace`,
 		"--workdir",
 		"/workspace",
 		"--entrypoint",
-		"solana-test-validator",
+		"bash",
 		image,
-		"--reset",
-		"--ledger",
-		`/workspace/${ledgerDirectory}`,
-		"--bpf-program",
-		programId,
-		"target/deploy/pasinpay_escrow.so",
-		"--rpc-port",
-		"8899",
-		"--faucet-port",
-		"9900",
-		"--bind-address",
-		"0.0.0.0",
+		"-lc",
+		validatorCommand,
 	]);
 	try {
 		await waitForValidator();
