@@ -128,6 +128,8 @@ try {
 		"seccomp=unconfined",
 		"--publish",
 		"127.0.0.1:8899:8899",
+		"--publish",
+		"127.0.0.1:8900:8900",
 		"--volume",
 		`${projectRoot}:/workspace`,
 		"--workdir",
