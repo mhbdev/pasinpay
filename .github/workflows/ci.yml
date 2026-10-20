@@ -64,7 +64,7 @@ jobs:
           CORS_ORIGIN: http://localhost:3001
           NEXT_PUBLIC_SERVER_URL: http://localhost:3000
           OPENROUTER_API_KEY: ci-placeholder
-          PASINPAY_ATTESTOR_PRIVATE_KEY: 0x1111111111111111111111111111111111111111111111111111111111111111
+          PASINPAY_ATTESTOR_PRIVATE_KEY: "0x1111111111111111111111111111111111111111111111111111111111111111"
           GITHUB_APP_PRIVATE_KEY: ci-placeholder
           PASINPAY_RPC_URL: https://sepolia-rollup.arbitrum.io/rpc
       - name: Build production Docker images
