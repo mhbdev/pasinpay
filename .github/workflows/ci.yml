@@ -53,6 +53,11 @@ jobs:
           fi
       - run: bun run check-types
       - run: bun run test
+        env:
+          BETTER_AUTH_SECRET: ci-secret-that-is-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          CORS_ORIGIN: http://localhost:3001
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay
       - run: bun run db:migrate
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/pasinpay

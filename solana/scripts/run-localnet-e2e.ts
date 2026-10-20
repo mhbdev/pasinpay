@@ -103,7 +103,6 @@ try {
 		);
 	await run("docker", [
 		"run",
-		"--rm",
 		"--detach",
 		"--name",
 		containerName,
@@ -128,14 +127,22 @@ try {
 		"--bind-address",
 		"0.0.0.0",
 	]);
-	await waitForValidator();
+	try {
+		await waitForValidator();
+	} catch (cause) {
+		await run("docker", ["logs", containerName], { capture: true }).catch(
+			() => undefined,
+		);
+		throw cause;
+	}
 	await run(
 		process.execPath,
 		["test", "--timeout=120000", "tests/escrow.e2e.test.ts"],
 		{ cwd: projectRoot },
 	);
 } finally {
-	await run("docker", ["stop", "--time", "10", containerName]).catch(
+	await run("docker", ["stop", "--timeout", "10", containerName]).catch(
 		() => undefined,
 	);
+	await run("docker", ["rm", "--force", containerName]).catch(() => undefined);
 }
