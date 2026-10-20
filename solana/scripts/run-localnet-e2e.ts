@@ -10,6 +10,7 @@ const image =
 const rpcUrl = "http://127.0.0.1:8899";
 const connection = new Connection(rpcUrl, "confirmed");
 const containerName = `pasinpay-solana-e2e-${process.pid}`;
+const ledgerDirectory = `target/pasinpay-solana-e2e-ledger-${process.pid}`;
 
 function run(
 	command: string,
@@ -117,7 +118,7 @@ try {
 		image,
 		"--reset",
 		"--ledger",
-		"/tmp/pasinpay-solana-e2e-ledger",
+		`/workspace/${ledgerDirectory}`,
 		"--bpf-program",
 		programId,
 		"target/deploy/pasinpay_escrow.so",
@@ -141,17 +142,17 @@ try {
 		await run("docker", ["top", containerName], { capture: true }).catch(
 			() => undefined,
 		);
-		await run(
-			"docker",
-			[
-				"exec",
-				containerName,
-				"bash",
-				"-lc",
-				"tail -n 200 /tmp/pasinpay-solana-e2e-ledger/validator.log",
-			],
-			{ capture: true },
-		).catch(() => undefined);
+		try {
+			const validatorLog = await readFile(
+				resolve(projectRoot, ledgerDirectory, "validator.log"),
+				"utf8",
+			);
+			process.stderr.write(
+				`Last validator log lines:\n${validatorLog.split("\n").slice(-200).join("\n")}`,
+			);
+		} catch (error) {
+			process.stderr.write(`Could not read validator log: ${String(error)}\n`);
+		}
 		await run("docker", ["logs", containerName], { capture: true }).catch(
 			() => undefined,
 		);
