@@ -3,7 +3,6 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "anchor build",
 		"test:e2e": "bun scripts/run-localnet-e2e.ts",
 		"wallets:devnet": "bun scripts/ensure-devnet-wallets.ts",
 		"fund:devnet": "bun scripts/fund-devnet-authority.ts",
