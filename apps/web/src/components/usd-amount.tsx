@@ -12,26 +12,36 @@ export function UsdAmount({
 }: {
 	amount: string;
 	className?: string;
-	chainConfig?: Pick<ChainConfig, "id" | "tokenAddress" | "tokenSymbol">;
+	chainConfig?: { id: number; tokenAddress: string; tokenSymbol: string };
 }) {
 	const { chainConfig: selectedChainConfig, ready } = useAppNetwork();
 	const chainConfig = requestedChainConfig ?? selectedChainConfig;
+	const isSolana = chainConfig.id === 103;
+	const evmConfig = isSolana ? selectedChainConfig : chainConfig;
 	const { data: decimals } = useReadContract({
-		address: chainConfig.tokenAddress,
+		address: evmConfig.tokenAddress as ChainConfig["tokenAddress"],
 		abi: erc20MetadataAbi,
 		functionName: "decimals",
-		chainId: chainConfig.id,
+		chainId: evmConfig.id,
+		query: { enabled: ready && !isSolana },
 	});
 	const { data: symbol } = useReadContract({
-		address: chainConfig.tokenAddress,
+		address: evmConfig.tokenAddress as ChainConfig["tokenAddress"],
 		abi: erc20MetadataAbi,
 		functionName: "symbol",
-		chainId: chainConfig.id,
+		chainId: evmConfig.id,
+		query: { enabled: ready && !isSolana },
 	});
+	const tokenDecimals = isSolana ? 6 : decimals;
+	const tokenSymbol = isSolana ? "USDC" : symbol;
 	let value: string | null = null;
 	try {
-		if (ready && decimals !== undefined && symbol === chainConfig.tokenSymbol) {
-			value = formatUnits(BigInt(amount), decimals);
+		if (
+			ready &&
+			tokenDecimals !== undefined &&
+			tokenSymbol === chainConfig.tokenSymbol
+		) {
+			value = formatUnits(BigInt(amount), tokenDecimals);
 		}
 	} catch {}
 	return (

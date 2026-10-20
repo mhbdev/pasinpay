@@ -7,6 +7,7 @@ import {
 	escrowAbi,
 	type SupportedChainId,
 } from "@pasinpay/chain";
+import { SOLANA_DEVNET_ID } from "@pasinpay/solana";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -67,6 +68,7 @@ import { authClient } from "@/lib/auth-client";
 import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { trpc } from "@/utils/trpc";
+import SolanaCreateBountyPage from "./solana-create";
 
 const erc20ApproveAbi = [
 	{
@@ -84,6 +86,15 @@ const erc20ApproveAbi = [
 type CreationMode = "existing" | "new";
 
 export default function CreateBountyPage() {
+	const { networkId } = useAppNetwork();
+	return networkId === SOLANA_DEVNET_ID ? (
+		<SolanaCreateBountyPage />
+	) : (
+		<EvmCreateBountyPage />
+	);
+}
+
+function EvmCreateBountyPage() {
 	const [creationMode, setCreationMode] = useState<CreationMode>("existing");
 	const [title, setTitle] = useState("");
 	const [issueBody, setIssueBody] = useState("");

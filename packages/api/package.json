@@ -13,6 +13,7 @@
 		"@pasinpay/chain": "workspace:*",
 		"@pasinpay/auth": "workspace:*",
 		"@pasinpay/db": "workspace:*",
+		"@pasinpay/solana": "workspace:*",
 		"@trpc/client": "catalog:",
 		"@trpc/server": "catalog:",
 		"drizzle-orm": "catalog:",

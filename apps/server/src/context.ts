@@ -6,6 +6,7 @@ import {
 	auth,
 	chainConfig,
 	chainRuntimes,
+	configuredSolanaDevnetConfig,
 	db,
 	githubService,
 } from "./services";
@@ -34,6 +35,7 @@ export async function createContext({
 				)
 				.map(([id, runtime]) => [Number(id), runtime.config]),
 		),
+		solana: configuredSolanaDevnetConfig,
 		accessTokenSecret: ENV.BETTER_AUTH_SECRET,
 	};
 }

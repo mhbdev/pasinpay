@@ -5,6 +5,13 @@ import { Badge } from "@pasinpay/ui/components/badge";
 import { webChainConfigs } from "@/lib/wallet";
 
 export function NetworkBadge({ chainId }: { chainId: number }) {
+	if (chainId === 103) {
+		return (
+			<Badge variant="outline" title="Solana Devnet · USDC">
+				Solana Devnet · USDC
+			</Badge>
+		);
+	}
 	const config = webChainConfigs[chainId as SupportedChainId];
 	if (!config) return null;
 	return (

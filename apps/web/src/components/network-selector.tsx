@@ -6,6 +6,7 @@ import {
 	ARC_MAINNET_ID,
 	ARC_TESTNET_ID,
 } from "@pasinpay/chain";
+import { SOLANA_DEVNET_ID } from "@pasinpay/solana";
 import {
 	Select,
 	SelectContent,
@@ -13,17 +14,25 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@pasinpay/ui/components/select";
+import { isSolanaDevnetConfigured } from "@/lib/solana-client";
 import { isWebChainConfigured } from "@/lib/wallet";
 import { useAppNetwork } from "./network-provider";
 
 export function NetworkSelector() {
-	const { chainId, chainConfig, error, ready, selectNetwork, switching } =
-		useAppNetwork();
+	const {
+		chainId,
+		networkId,
+		chainConfig,
+		error,
+		ready,
+		selectNetwork,
+		switching,
+	} = useAppNetwork();
 
 	return (
 		<div className="flex items-center">
 			<Select
-				value={ready ? String(chainId) : String(ARBITRUM_SEPOLIA_ID)}
+				value={ready ? String(networkId) : String(ARBITRUM_SEPOLIA_ID)}
 				onValueChange={(value) => {
 					if (value) void selectNetwork(Number(value) as typeof chainId);
 				}}
@@ -41,20 +50,32 @@ export function NetworkSelector() {
 						) : (
 							<>
 								<span className="sm:hidden">
-									{chainId === ARC_MAINNET_ID
-										? "Arc"
-										: chainId === ARC_TESTNET_ID
-											? "Arc Testnet"
-											: chainId === ARBITRUM_SEPOLIA_ID
-												? "Sepolia"
-												: "Arbitrum One"}
+									{networkId === SOLANA_DEVNET_ID
+										? "Solana Devnet"
+										: chainId === ARC_MAINNET_ID
+											? "Arc"
+											: chainId === ARC_TESTNET_ID
+												? "Arc Testnet"
+												: chainId === ARBITRUM_SEPOLIA_ID
+													? "Sepolia"
+													: "Arbitrum One"}
 								</span>
-								<span className="hidden sm:inline">{chainConfig.name}</span>
+								<span className="hidden sm:inline">
+									{networkId === SOLANA_DEVNET_ID
+										? "Solana Devnet · Testnet"
+										: chainConfig.name}
+								</span>
 							</>
 						)}
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContent className="min-w-[190px]">
+					<SelectItem
+						value={String(SOLANA_DEVNET_ID)}
+						disabled={!isSolanaDevnetConfigured()}
+					>
+						Solana Devnet · Testnet
+					</SelectItem>
 					<SelectItem
 						value={String(ARBITRUM_SEPOLIA_ID)}
 						disabled={!isWebChainConfigured(ARBITRUM_SEPOLIA_ID)}

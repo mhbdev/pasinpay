@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { claimDigest, escrowAbi, verifyClaimSignature } from "@pasinpay/chain";
 import {
 	account,
@@ -12,8 +12,29 @@ import {
 	settlement,
 	walletLink,
 } from "@pasinpay/db/schema/index";
+import {
+	bigintToLittleEndian,
+	bytesToHex,
+	decodeSolanaBountyAccount,
+	deriveBountyAddress,
+	encodeSolanaClaimMessage,
+	fetchSolanaEscrowConfig,
+	hexToBytes,
+	SOLANA_DEVNET_ID,
+	SOLANA_DEVNET_NETWORK_DOMAIN,
+	SOLANA_DEVNET_USDC_MINT,
+	signSolanaBytes,
+} from "@pasinpay/solana";
+import {
+	createSolanaRpc,
+	getAddressDecoder,
+	getBase58Decoder,
+	getBase64Encoder,
+	address as solanaAddress,
+} from "@solana/kit";
 import { and, eq, isNull, lt } from "drizzle-orm";
 import type { Address, Hex } from "viem";
+import { ENV } from "./env.server";
 import { getContractAttestorAddress, signClaim } from "./lib/attestor";
 import {
 	getAttestationExpiry,
@@ -27,6 +48,7 @@ import {
 import {
 	type ChainRuntime,
 	configuredChainRuntimes,
+	configuredSolanaDevnetConfig,
 	db,
 	getChainRuntime,
 } from "./services";
@@ -318,10 +340,340 @@ async function syncChainEvents(runtime: ChainRuntime) {
 		});
 }
 
+function readU64LittleEndian(bytes: Uint8Array, offset: number) {
+	let value = BigInt(0);
+	for (let index = 7; index >= 0; index -= 1) {
+		value = (value << BigInt(8)) | BigInt(bytes[offset + index] ?? 0);
+	}
+	return value;
+}
+
+async function syncSolanaBounties() {
+	const config = configuredSolanaDevnetConfig;
+	if (!config?.programId) return;
+	const rpc = createSolanaRpc(config.rpcUrl);
+	const rows = await db
+		.select()
+		.from(bounty)
+		.where(eq(bounty.chainId, SOLANA_DEVNET_ID));
+	const bountyPaidDiscriminator = new Uint8Array(
+		createHash("sha256").update("event:BountyPaid").digest().subarray(0, 8),
+	);
+	const feePaidDiscriminator = new Uint8Array(
+		createHash("sha256")
+			.update("event:PlatformFeePaid")
+			.digest()
+			.subarray(0, 8),
+	);
+	const addressDecoder = getAddressDecoder();
+
+	for (const row of rows) {
+		if (row.onchainBountyId === null) continue;
+		if (row.escrowAddress && row.escrowAddress !== config.programId) continue;
+		const bountyAddress = await deriveBountyAddress(
+			config.programId,
+			row.onchainBountyId,
+		);
+		const { value: accountInfo } = await rpc
+			.getAccountInfo(solanaAddress(bountyAddress), {
+				commitment: "confirmed",
+				encoding: "base64",
+			})
+			.send();
+		if (!accountInfo || accountInfo.owner !== solanaAddress(config.programId))
+			continue;
+		const state = decodeSolanaBountyAccount(
+			new Uint8Array(getBase64Encoder().encode(accountInfo.data[0])),
+		);
+		const claimant =
+			state.claimant === "11111111111111111111111111111111"
+				? null
+				: state.claimant;
+		const digest = state.claimDigest.some((byte) => byte !== 0)
+			? bytesToHex(state.claimDigest)
+			: null;
+		await db
+			.update(bounty)
+			.set({
+				status: state.status,
+				claimantWallet: claimant,
+				claimDigest: digest,
+				reviewEnds:
+					state.reviewEnds > BigInt(0)
+						? new Date(Number(state.reviewEnds) * 1000)
+						: null,
+				updatedAt: new Date(),
+			})
+			.where(eq(bounty.id, row.id));
+
+		if (state.status !== "Paid") continue;
+		const [existingSettlement] = await db
+			.select({ id: settlement.id })
+			.from(settlement)
+			.where(eq(settlement.bountyId, row.id))
+			.limit(1);
+		if (existingSettlement) continue;
+		const [latest] = await rpc
+			.getSignaturesForAddress(solanaAddress(bountyAddress), {
+				commitment: "confirmed",
+				limit: 10,
+			})
+			.send();
+		if (!latest || latest.err) continue;
+		const transaction = await rpc
+			.getTransaction(latest.signature as import("@solana/kit").Signature, {
+				commitment: "confirmed",
+				encoding: "json",
+				maxSupportedTransactionVersion: 0,
+			})
+			.send();
+		const logs = transaction?.meta?.logMessages ?? [];
+		let paidRecipient: string | null = null;
+		let paidAmount: bigint | null = null;
+		let paidFee = BigInt(0);
+		for (const log of logs) {
+			const match = log.match(/^Program data: ([A-Za-z0-9+/=]+)$/);
+			if (!match?.[1]) continue;
+			const data = new Uint8Array(getBase64Encoder().encode(match[1]));
+			if (data.length < 56) continue;
+			const id = readU64LittleEndian(data, 8);
+			if (id !== row.onchainBountyId) continue;
+			if (
+				bountyPaidDiscriminator.every((value, index) => data[index] === value)
+			) {
+				paidRecipient = addressDecoder.decode(data.slice(16, 48));
+				paidAmount = readU64LittleEndian(data, 48);
+			} else if (
+				feePaidDiscriminator.every((value, index) => data[index] === value)
+			) {
+				paidFee = readU64LittleEndian(data, 48);
+			}
+		}
+		if (!paidRecipient || paidAmount === null) continue;
+		await db
+			.insert(settlement)
+			.values({
+				bountyId: row.id,
+				recipient: paidRecipient,
+				amount: paidAmount,
+				feeAmount: paidFee,
+				transactionHash: latest.signature,
+			})
+			.onConflictDoNothing();
+	}
+}
+
 function shaToBytes32(sha: string): Hex {
 	if (!/^[a-f0-9]{40}$/i.test(sha))
 		throw new Error("GitHub did not provide a valid merge commit SHA");
 	return `0x${sha.toLowerCase().padStart(64, "0")}` as Hex;
+}
+
+async function processSolanaGitHubClaim(
+	bountyRow: typeof bounty.$inferSelect,
+	jobPayload: GitHubJobPayload,
+	pr: NonNullable<PullRequestPayload["pull_request"]>,
+	repositoryName: string,
+) {
+	const config = configuredSolanaDevnetConfig;
+	if (!config?.programId || !config.feeTreasury) return;
+	if (
+		bountyRow.chainId !== SOLANA_DEVNET_ID ||
+		bountyRow.onchainBountyId === null ||
+		(bountyRow.escrowAddress && bountyRow.escrowAddress !== config.programId)
+	)
+		return;
+	if (new Date() >= bountyRow.deadline)
+		throw new Error("Solana bounty deadline has passed");
+
+	const [githubAccount] = await db
+		.select()
+		.from(account)
+		.where(
+			and(
+				eq(account.providerId, "github"),
+				eq(account.accountId, String(pr.user?.id ?? "")),
+			),
+		)
+		.limit(1);
+	if (!githubAccount)
+		throw new Error(
+			`GitHub user ${pr.user?.login ?? "unknown"} is not linked to a PasinPay account`,
+		);
+	if (bountyRow.joiningPasswordSalt || bountyRow.joiningPasswordHash) {
+		const [participant] = await db
+			.select({ id: bountyParticipant.id })
+			.from(bountyParticipant)
+			.where(
+				and(
+					eq(bountyParticipant.bountyId, bountyRow.id),
+					eq(bountyParticipant.userId, githubAccount.userId),
+					eq(bountyParticipant.githubAccountId, String(pr.user?.id ?? "")),
+				),
+			)
+			.limit(1);
+		if (!participant) return;
+	}
+
+	const [wallet] = await db
+		.select()
+		.from(walletLink)
+		.where(
+			and(
+				eq(walletLink.userId, githubAccount.userId),
+				eq(walletLink.chainId, SOLANA_DEVNET_ID),
+			),
+		)
+		.limit(1);
+	if (!wallet)
+		throw new Error(
+			`GitHub user ${pr.user?.login ?? "unknown"} has no linked Solana wallet`,
+		);
+
+	const [existingClaim] = await db
+		.select()
+		.from(claim)
+		.where(eq(claim.bountyId, bountyRow.id))
+		.limit(1);
+	if (existingClaim && existingClaim.githubPrNumber !== pr.number) return;
+	if (
+		existingClaim &&
+		existingClaim.githubPrNumber === pr.number &&
+		!isAttestationExpired(existingClaim.attestationExpiresAt)
+	)
+		return;
+
+	const rpc = createSolanaRpc(config.rpcUrl);
+	const onchainConfig = await fetchSolanaEscrowConfig(rpc, config.programId);
+	if (!onchainConfig)
+		throw new Error("Solana escrow config account is not initialized");
+	if (
+		onchainConfig.mint !== SOLANA_DEVNET_USDC_MINT ||
+		onchainConfig.feeTreasury !== config.feeTreasury ||
+		onchainConfig.feeBps !== config.feeBps ||
+		onchainConfig.networkDomain.some(
+			(byte, index) => byte !== SOLANA_DEVNET_NETWORK_DOMAIN[index],
+		)
+	)
+		throw new Error(
+			"Solana server and on-chain escrow configuration do not match",
+		);
+	const bountyAddress = await deriveBountyAddress(
+		config.programId,
+		bountyRow.onchainBountyId,
+	);
+	const { value: bountyAccount } = await rpc
+		.getAccountInfo(solanaAddress(bountyAddress), {
+			commitment: "confirmed",
+			encoding: "base64",
+		})
+		.send();
+	if (!bountyAccount || bountyAccount.owner !== solanaAddress(config.programId))
+		throw new Error(
+			"The Solana bounty account is missing or owned by another program",
+		);
+	const state = decodeSolanaBountyAccount(
+		new Uint8Array(getBase64Encoder().encode(bountyAccount.data[0])),
+	);
+	const expectedRepositoryHash = hexToBytes(bountyRow.repositoryHash, 32);
+	if (
+		state.id !== bountyRow.onchainBountyId ||
+		state.status !== "Funded" ||
+		state.claimant !== "11111111111111111111111111111111" ||
+		state.repositoryHash.some(
+			(byte, index) => byte !== expectedRepositoryHash[index],
+		)
+	)
+		return;
+
+	const privateKey = ENV.PASINPAY_SOLANA_DEVNET_ATTESTOR_PRIVATE_KEY;
+	if (!privateKey)
+		throw new Error(
+			"Solana Devnet claim attestor private key is not configured",
+		);
+	const nonceValue =
+		BigInt(`0x${randomBytes(8).toString("hex")}`) &
+		((BigInt(1) << BigInt(63)) - BigInt(1));
+	const nonce = new Uint8Array(32);
+	nonce.set(bigintToLittleEndian(nonceValue, 8));
+	const attestationExpiresAt = getAttestationExpiry(bountyRow.deadline);
+	const expiresAt = BigInt(Math.floor(attestationExpiresAt.getTime() / 1000));
+	const mergeCommit = shaToBytes32(pr.merge_commit_sha ?? "");
+	const message = encodeSolanaClaimMessage({
+		programId: config.programId,
+		networkDomain: onchainConfig.networkDomain,
+		bountyAddress,
+		bountyId: state.id,
+		repositoryHash: state.repositoryHash,
+		issueNumber: state.issueNumber,
+		prNumber: pr.number ?? 0,
+		commitHash: hexToBytes(mergeCommit, 32),
+		claimant: wallet.walletAddress,
+		expiresAt,
+		nonce,
+	});
+	const signed = await signSolanaBytes(privateKey, message);
+	if (signed.signer !== onchainConfig.attestor)
+		throw new Error(
+			"The configured Solana attestor key does not match the on-chain trusted attestor",
+		);
+	const signature = getBase58Decoder().decode(signed.signature);
+	const digest = bytesToHex(
+		new Uint8Array(createHash("sha256").update(message).digest()),
+	);
+	const deliveryId = jobPayload.deliveryId ?? "solana-reconcile";
+	const evidence = {
+		repository: repositoryName,
+		issueNumber: bountyRow.issueNumber,
+		prNumber: pr.number,
+		commitHash: pr.merge_commit_sha,
+		authorLogin: pr.user?.login,
+		prUrl: pr.html_url,
+	};
+
+	await db.transaction(async (tx) => {
+		if (existingClaim) {
+			await tx
+				.update(claim)
+				.set({
+					mergeCommitSha: pr.merge_commit_sha ?? "",
+					claimantWallet: wallet.walletAddress,
+					attestationDigest: digest,
+					attestationSignature: signature,
+					attestationNonce: nonceValue,
+					attestationExpiresAt,
+					githubDeliveryId: deliveryId,
+					evidence,
+				})
+				.where(eq(claim.id, existingClaim.id));
+		} else {
+			const [inserted] = await tx
+				.insert(claim)
+				.values({
+					bountyId: bountyRow.id,
+					githubPrNumber: pr.number ?? 0,
+					mergeCommitSha: pr.merge_commit_sha ?? "",
+					claimantWallet: wallet.walletAddress,
+					attestationDigest: digest,
+					attestationSignature: signature,
+					attestationNonce: nonceValue,
+					attestationExpiresAt,
+					githubDeliveryId: deliveryId,
+					evidence,
+				})
+				.onConflictDoNothing({ target: claim.bountyId })
+				.returning({ id: claim.id });
+			if (!inserted) return;
+		}
+		await tx
+			.update(bounty)
+			.set({
+				claimantWallet: wallet.walletAddress,
+				claimDigest: digest,
+				updatedAt: new Date(),
+			})
+			.where(eq(bounty.id, bountyRow.id));
+	});
 }
 
 async function processGitHubJob(job: typeof jobTable.$inferSelect) {
@@ -375,6 +727,9 @@ async function processGitHubJob(job: typeof jobTable.$inferSelect) {
 		bountyRow.repository.toLowerCase() !== repository.toLowerCase()
 	)
 		return;
+	if (bountyRow.chainId === SOLANA_DEVNET_ID) {
+		return processSolanaGitHubClaim(bountyRow, jobPayload, pr, repository);
+	}
 	const runtime = getChainRuntime(bountyRow.chainId);
 	const { config: chainConfig, publicClient } = runtime;
 	if (
@@ -585,13 +940,22 @@ async function reconcileGitHubClaims() {
 		.where(eq(bounty.status, "Funded"));
 
 	for (const row of fundedBounties) {
-		const runtime = getChainRuntime(row.bounty.chainId);
-		if (
-			row.bounty.escrowAddress &&
-			row.bounty.escrowAddress.toLowerCase() !==
-				runtime.config.escrowAddress.toLowerCase()
-		)
-			continue;
+		if (row.bounty.chainId === SOLANA_DEVNET_ID) {
+			if (
+				!configuredSolanaDevnetConfig?.programId ||
+				(row.bounty.escrowAddress &&
+					row.bounty.escrowAddress !== configuredSolanaDevnetConfig.programId)
+			)
+				continue;
+		} else {
+			const runtime = getChainRuntime(row.bounty.chainId);
+			if (
+				row.bounty.escrowAddress &&
+				row.bounty.escrowAddress.toLowerCase() !==
+					runtime.config.escrowAddress.toLowerCase()
+			)
+				continue;
+		}
 		if (row.bounty.onchainBountyId === null) continue;
 		const pullRequests = await listRepositoryPullRequests(
 			row.installationId,
@@ -681,6 +1045,11 @@ export async function runWorker() {
 						error,
 					);
 				}
+			}
+			try {
+				await syncSolanaBounties();
+			} catch (error) {
+				console.error("Solana Devnet reconciliation failed", error);
 			}
 		}
 		if (Date.now() - lastGitHubReconciliation > 30_000) {

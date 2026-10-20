@@ -85,6 +85,7 @@ import { getReadableError } from "@/lib/errors";
 import { writeWithFreshEip1559Fees } from "@/lib/transaction-fees";
 import { type WebChainId, webChainConfigs } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
+import { SolanaBountyDetail } from "./solana-bounty-detail";
 
 const statusLabels: Record<string, string> = {
 	Open: "OPEN",
@@ -259,10 +260,14 @@ export default function BountyDetailPage() {
 		bounty && !bounty.isLocked && (!bounty.isPrivate || session)
 			? bounty
 			: undefined;
-	const bountyChainId = (fullBounty?.chain.id ?? chainConfig.id) as WebChainId;
-	const bountyChainConfig = fullBounty
-		? { ...webChainConfigs[bountyChainId], ...fullBounty.chain }
-		: chainConfig;
+	const bountyIsSolana = fullBounty?.chain.id === 103;
+	const bountyChainId = (
+		bountyIsSolana ? chainConfig.id : (fullBounty?.chain.id ?? chainConfig.id)
+	) as WebChainId;
+	const bountyChainConfig =
+		fullBounty && !bountyIsSolana
+			? { ...webChainConfigs[bountyChainId], ...fullBounty.chain }
+			: chainConfig;
 	const client = usePublicClient({ chainId: bountyChainId });
 	const { switchChainAsync } = useSwitchChain();
 	const { writeContractAsync } = useWriteContract();
@@ -288,7 +293,9 @@ export default function BountyDetailPage() {
 			chainId: bountyChainId,
 			query: {
 				enabled:
-					onchainBountyId !== undefined && bountyEscrowAddress !== ZERO_ADDRESS,
+					!bountyIsSolana &&
+					onchainBountyId !== undefined &&
+					bountyEscrowAddress !== ZERO_ADDRESS,
 				refetchInterval: 10_000,
 			},
 		});
@@ -585,6 +592,8 @@ export default function BountyDetailPage() {
 				</Card>
 			</main>
 		);
+	if (fullBounty?.chain.id === 103)
+		return <SolanaBountyDetail bounty={fullBounty} claim={claim ?? null} />;
 	const onchainStatus = onchainBounty
 		? (onchainStatusLabels[Number(onchainBounty[11])] ?? null)
 		: null;

@@ -1,0 +1,19 @@
+{
+	"name": "@pasinpay/solana-contract-tests",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "anchor build",
+		"test:e2e": "bun scripts/run-localnet-e2e.ts",
+		"wallets:devnet": "bun scripts/ensure-devnet-wallets.ts",
+		"fund:devnet": "bun scripts/fund-devnet-authority.ts",
+		"deploy:devnet": "bun scripts/deploy-devnet.ts",
+		"smoke:devnet": "bun scripts/smoke-devnet.ts"
+	},
+	"devDependencies": {
+		"@pasinpay/solana": "workspace:*",
+		"@solana/kit": "8.5.0",
+		"@solana/spl-token": "^0.4.15",
+		"@solana/web3.js": "^1.99.0"
+	}
+}

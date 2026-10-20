@@ -8,6 +8,7 @@ import {
 	ZERO_ADDRESS,
 } from "@pasinpay/chain";
 import { createDb } from "@pasinpay/db";
+import { solanaDevnetConfigFromEnv } from "@pasinpay/solana";
 import { createPublicClient, http, type PublicClient } from "viem";
 
 import { ENV } from "./env.server";
@@ -23,6 +24,11 @@ import {
 
 export const db = createDb(ENV);
 export const auth = createAuth(ENV, db);
+export const solanaDevnetConfig = solanaDevnetConfigFromEnv(ENV);
+export const configuredSolanaDevnetConfig =
+	solanaDevnetConfig.programId && solanaDevnetConfig.feeTreasury
+		? solanaDevnetConfig
+		: null;
 
 export type ChainRuntime = {
 	config: ReturnType<typeof chainConfigFromEnvForChain>;

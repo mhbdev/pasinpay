@@ -7,6 +7,9 @@ node_modules
 dist
 build
 *.tsbuildinfo
+solana/target
+solana/.anchor
+solana/keys
 contracts/cache
 contracts/out
 

@@ -11,6 +11,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
+export const SOLANA_DEVNET_CHAIN_ID = 103;
+
 export const walletLinkChallenge = pgTable(
 	"wallet_link_challenge",
 	{
@@ -31,11 +33,17 @@ export const walletLink = pgTable(
 	{
 		id: uuid("id").defaultRandom().primaryKey(),
 		userId: text("user_id").notNull(),
-		walletAddress: text("wallet_address").notNull().unique(),
+		walletAddress: text("wallet_address").notNull(),
 		chainId: integer("chain_id").notNull(),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 	},
-	(table) => [uniqueIndex("wallet_link_user_idx").on(table.userId)],
+	(table) => [
+		uniqueIndex("wallet_link_user_chain_idx").on(table.userId, table.chainId),
+		uniqueIndex("wallet_link_address_chain_idx").on(
+			table.chainId,
+			table.walletAddress,
+		),
+	],
 );
 
 export const githubInstallation = pgTable("github_installation", {

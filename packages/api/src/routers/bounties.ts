@@ -13,6 +13,11 @@ import {
 	walletLink,
 	walletLinkChallenge,
 } from "@pasinpay/db/schema/index";
+import {
+	isValidSolanaAddress,
+	SOLANA_DEVNET_ID,
+	verifySolanaRawMessage,
+} from "@pasinpay/solana";
 import { TRPCError } from "@trpc/server";
 import {
 	and,
@@ -39,10 +44,15 @@ import {
 import { getPullRequestStatus } from "../lib/pull-request-status";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+const walletAddressSchema = z.string().min(32).max(64);
 const chainIdSchema = z
 	.number()
 	.int()
-	.refine((id) => (SUPPORTED_CHAIN_IDS as readonly number[]).includes(id));
+	.refine(
+		(id) =>
+			id === SOLANA_DEVNET_ID ||
+			(SUPPORTED_CHAIN_IDS as readonly number[]).includes(id),
+	);
 
 function configuredChain(ctx: Context, chainId: number) {
 	const config = ctx.chains[chainId];
@@ -55,14 +65,31 @@ function configuredChain(ctx: Context, chainId: number) {
 	return config;
 }
 
+function configuredSolana(ctx: Context) {
+	if (!ctx.solana?.programId || !ctx.solana.feeTreasury) {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message: "Solana Devnet escrow is not deployed and configured yet.",
+		});
+	}
+	return ctx.solana;
+}
+
+function bountyNetwork(ctx: Context, chainId: number) {
+	if (chainId === SOLANA_DEVNET_ID) return configuredSolana(ctx);
+	return configuredChain(ctx, chainId);
+}
+
 function serializeBounty(row: typeof bounty.$inferSelect) {
 	const { joiningPasswordSalt, joiningPasswordHash, ...safeRow } = row;
 	return {
 		...safeRow,
 		isPrivate: Boolean(joiningPasswordSalt || joiningPasswordHash),
 		tokenSymbol:
-			chainConfigs[row.chainId as keyof typeof chainConfigs]?.tokenSymbol ??
-			"USDG",
+			row.chainId === SOLANA_DEVNET_ID
+				? "USDC"
+				: (chainConfigs[row.chainId as keyof typeof chainConfigs]
+						?.tokenSymbol ?? "USDG"),
 		amount: row.amount.toString(),
 		feeAmount: row.feeAmount.toString(),
 		totalFunded: row.totalFunded.toString(),
@@ -114,6 +141,8 @@ async function authorizedInstallation(
 }
 
 export const bountyRouter = router({
+	solanaDevnetConfig: publicProcedure.query(({ ctx }) => ctx.solana ?? null),
+
 	platformStats: publicProcedure.query(async ({ ctx }) => {
 		const [usersRow, bountiesRow, paidRow, fundedRow, rewardRow] =
 			await Promise.all([
@@ -442,8 +471,11 @@ export const bountyRouter = router({
 							amount: row.bounty.amount.toString(),
 							chainId: row.bounty.chainId,
 							tokenSymbol:
-								chainConfigs[row.bounty.chainId as keyof typeof chainConfigs]
-									?.tokenSymbol ?? "USDG",
+								row.bounty.chainId === SOLANA_DEVNET_ID
+									? "USDC"
+									: (chainConfigs[
+											row.bounty.chainId as keyof typeof chainConfigs
+										]?.tokenSymbol ?? "USDG"),
 							isPrivate: true as const,
 						};
 					return {
@@ -590,8 +622,10 @@ export const bountyRouter = router({
 							?.tokenSymbol ?? "USDG",
 				};
 			const bountyChain =
-				ctx.chains[row.chainId] ??
-				chainConfigs[row.chainId as keyof typeof chainConfigs];
+				row.chainId === SOLANA_DEVNET_ID
+					? ctx.solana
+					: (ctx.chains[row.chainId] ??
+						chainConfigs[row.chainId as keyof typeof chainConfigs]);
 			if (!bountyChain) return null;
 			const [creatorRow] = await ctx.db
 				.select({
@@ -779,15 +813,14 @@ export const bountyRouter = router({
 	}),
 
 	walletLink: protectedProcedure.query(async ({ ctx }) => {
-		const [row] = await ctx.db
+		const rows = await ctx.db
 			.select({
 				walletAddress: walletLink.walletAddress,
 				chainId: walletLink.chainId,
 			})
 			.from(walletLink)
-			.where(eq(walletLink.userId, ctx.session.user.id))
-			.limit(1);
-		return row ?? null;
+			.where(eq(walletLink.userId, ctx.session.user.id));
+		return rows;
 	}),
 
 	register: protectedProcedure
@@ -795,7 +828,7 @@ export const bountyRouter = router({
 			z.object({
 				id: z.string().uuid().optional(),
 				onchainBountyId: z.string().regex(/^\d+$/),
-				creatorWallet: addressSchema,
+				creatorWallet: walletAddressSchema,
 				repository: z.string().min(3).max(200),
 				repositoryHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 				issueNumber: z.number().int().positive(),
@@ -817,17 +850,30 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const targetChain = configuredChain(ctx, input.chainId);
+			const targetChain = bountyNetwork(ctx, input.chainId);
 			const [linkedWallet] = await ctx.db
 				.select()
 				.from(walletLink)
-				.where(eq(walletLink.userId, ctx.session.user.id))
+				.where(
+					and(
+						eq(walletLink.userId, ctx.session.user.id),
+						eq(walletLink.chainId, targetChain.id),
+					),
+				)
 				.limit(1);
+			const creatorWallet =
+				input.chainId === SOLANA_DEVNET_ID
+					? isValidSolanaAddress(input.creatorWallet)
+						? input.creatorWallet
+						: null
+					: addressSchema.safeParse(input.creatorWallet).success
+						? getAddress(input.creatorWallet)
+						: null;
 			if (
 				!linkedWallet ||
 				linkedWallet.chainId !== targetChain.id ||
-				linkedWallet.walletAddress.toLowerCase() !==
-					input.creatorWallet.toLowerCase()
+				!creatorWallet ||
+				linkedWallet.walletAddress !== creatorWallet
 			)
 				throw new Error("Link this wallet before creating a bounty");
 			const [authorizedRepository] = await ctx.db
@@ -885,7 +931,7 @@ export const bountyRouter = router({
 					chainId: input.chainId,
 					escrowAddress: targetChain.escrowAddress,
 					onchainBountyId: BigInt(input.onchainBountyId),
-					creatorWallet: getAddress(input.creatorWallet),
+					creatorWallet,
 					repository: input.repository,
 					repositoryHash: input.repositoryHash.toLowerCase(),
 					issueNumber: input.issueNumber,
@@ -941,7 +987,14 @@ export const bountyRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const targetChain = configuredChain(ctx, input.chainId);
+			if (input.chainId === SOLANA_DEVNET_ID) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message:
+						"Solana bounty status is indexed from confirmed on-chain accounts; client-provided status updates are not accepted.",
+				});
+			}
+			const targetChain = bountyNetwork(ctx, input.chainId);
 			const [row] = await ctx.db
 				.update(bounty)
 				.set({ status: input.status, updatedAt: new Date() })
@@ -960,18 +1013,38 @@ export const bountyRouter = router({
 	walletChallenge: protectedProcedure
 		.input(
 			z.object({
-				address: addressSchema,
+				address: walletAddressSchema,
 				chainId: chainIdSchema,
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			configuredChain(ctx, input.chainId);
+			if (input.chainId === SOLANA_DEVNET_ID) {
+				configuredSolana(ctx);
+				if (!isValidSolanaAddress(input.address)) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Enter a valid Solana wallet address.",
+					});
+				}
+			} else {
+				configuredChain(ctx, input.chainId);
+				if (!addressSchema.safeParse(input.address).success) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "Enter a valid EVM wallet address.",
+					});
+				}
+			}
+			const normalizedAddress =
+				input.chainId === SOLANA_DEVNET_ID
+					? input.address
+					: getAddress(input.address);
 			const nonce = randomBytes(24).toString("hex");
 			const message = [
 				"PasinPay wallet linking",
 				"",
 				`User: ${ctx.session.user.id}`,
-				`Wallet: ${getAddress(input.address)}`,
+				`Wallet: ${normalizedAddress}`,
 				`Chain ID: ${input.chainId}`,
 				`Nonce: ${nonce}`,
 				`Expires: ${new Date(Date.now() + 10 * 60_000).toISOString()}`,
@@ -990,13 +1063,29 @@ export const bountyRouter = router({
 		.input(
 			z.object({
 				nonce: z.string(),
-				address: addressSchema,
+				address: walletAddressSchema,
 				chainId: chainIdSchema,
-				signature: z.string().regex(/^0x[a-fA-F0-9]+$/),
+				signature: z.string().min(64).max(132),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			configuredChain(ctx, input.chainId);
+			if (input.chainId === SOLANA_DEVNET_ID) configuredSolana(ctx);
+			else configuredChain(ctx, input.chainId);
+			const normalizedAddress =
+				input.chainId === SOLANA_DEVNET_ID
+					? input.address
+					: addressSchema.safeParse(input.address).success
+						? getAddress(input.address)
+						: "";
+			if (
+				input.chainId === SOLANA_DEVNET_ID &&
+				!isValidSolanaAddress(input.address)
+			) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Enter a valid Solana wallet address.",
+				});
+			}
 			const [challenge] = await ctx.db
 				.select()
 				.from(walletLinkChallenge)
@@ -1012,48 +1101,77 @@ export const bountyRouter = router({
 			if (
 				!challenge ||
 				challenge.chainId !== input.chainId ||
-				!(await verifyMessage({
-					address: getAddress(input.address),
-					message: challenge.message,
-					signature: input.signature as `0x${string}`,
-				}))
+				!(input.chainId === SOLANA_DEVNET_ID
+					? await verifySolanaRawMessage({
+							address: input.address,
+							message: challenge.message,
+							signature: input.signature,
+						})
+					: addressSchema.safeParse(input.address).success &&
+						(await verifyMessage({
+							address: getAddress(input.address),
+							message: challenge.message,
+							signature: input.signature as `0x${string}`,
+						})))
 			) {
 				throw new Error("Wallet signature could not be verified");
 			}
 			const [existingOwner] = await ctx.db
 				.select({ userId: walletLink.userId })
 				.from(walletLink)
-				.where(eq(walletLink.walletAddress, getAddress(input.address)))
+				.where(
+					and(
+						eq(walletLink.chainId, input.chainId),
+						eq(walletLink.walletAddress, normalizedAddress),
+					),
+				)
 				.limit(1);
 			if (existingOwner && existingOwner.userId !== ctx.session.user.id)
 				throw new Error("This wallet is already linked to another account");
-			await ctx.db
-				.update(walletLinkChallenge)
-				.set({ usedAt: new Date() })
-				.where(eq(walletLinkChallenge.id, challenge.id));
-			const [link] = await ctx.db
-				.insert(walletLink)
-				.values({
-					userId: ctx.session.user.id,
-					walletAddress: getAddress(input.address),
-					chainId: input.chainId,
-				})
-				.onConflictDoUpdate({
-					target: walletLink.userId,
-					set: {
-						walletAddress: getAddress(input.address),
+			const link = await ctx.db.transaction(async (tx) => {
+				const [consumedChallenge] = await tx
+					.update(walletLinkChallenge)
+					.set({ usedAt: new Date() })
+					.where(
+						and(
+							eq(walletLinkChallenge.id, challenge.id),
+							isNull(walletLinkChallenge.usedAt),
+							gt(walletLinkChallenge.expiresAt, new Date()),
+						),
+					)
+					.returning({ id: walletLinkChallenge.id });
+				if (!consumedChallenge)
+					throw new Error("Wallet challenge has already been used or expired");
+				const [updatedLink] = await tx
+					.insert(walletLink)
+					.values({
+						userId: ctx.session.user.id,
+						walletAddress: normalizedAddress,
 						chainId: input.chainId,
-						createdAt: new Date(),
-					},
-				})
-				.returning();
+					})
+					.onConflictDoUpdate({
+						target: [walletLink.userId, walletLink.chainId],
+						set: { walletAddress: normalizedAddress, createdAt: new Date() },
+					})
+					.returning();
+				return updatedLink;
+			});
 			return link;
 		}),
 
-	unlinkWallet: protectedProcedure.mutation(async ({ ctx }) => {
-		await ctx.db
-			.delete(walletLink)
-			.where(eq(walletLink.userId, ctx.session.user.id));
-		return { ok: true };
-	}),
+	unlinkWallet: protectedProcedure
+		.input(z.object({ chainId: chainIdSchema.optional() }).optional())
+		.mutation(async ({ ctx, input }) => {
+			await ctx.db
+				.delete(walletLink)
+				.where(
+					input?.chainId === undefined
+						? eq(walletLink.userId, ctx.session.user.id)
+						: and(
+								eq(walletLink.userId, ctx.session.user.id),
+								eq(walletLink.chainId, input.chainId),
+							),
+				);
+			return { ok: true };
+		}),
 });

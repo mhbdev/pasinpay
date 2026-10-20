@@ -1,6 +1,7 @@
 import type { Session } from "@pasinpay/auth";
 import type { ChainConfig } from "@pasinpay/chain";
 import type { Database } from "@pasinpay/db";
+import type { SolanaNetworkConfig } from "@pasinpay/solana";
 
 export type GitHubService = {
 	appSlug?: string;
@@ -74,5 +75,6 @@ export type Context = {
 	github: GitHubService;
 	chain: ChainConfig;
 	chains: Partial<Record<number, ChainConfig>>;
+	solana?: SolanaNetworkConfig | null;
 	accessTokenSecret: string;
 };

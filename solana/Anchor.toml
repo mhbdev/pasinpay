@@ -1,0 +1,23 @@
+[toolchain]
+anchor_version = "1.2.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+pasinpay_escrow = "4n7TBwsub1PtVfFv7tT5Y2ZbuFMJ1Kv1wzMTRjiwTTeD"
+
+[programs.devnet]
+pasinpay_escrow = "4n7TBwsub1PtVfFv7tT5Y2ZbuFMJ1Kv1wzMTRjiwTTeD"
+
+[provider]
+cluster = "Localnet"
+wallet = "./keys/localnet-authority.json"
+
+[scripts]
+test = "bun test tests"
+
+[test]
+startup_wait = 10000
+shutdown_wait = 2000

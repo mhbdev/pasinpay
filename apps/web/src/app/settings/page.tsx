@@ -1,6 +1,7 @@
 "use client";
 
 import { SUPPORTED_CHAIN_IDS } from "@pasinpay/chain";
+import { SOLANA_DEVNET_ID } from "@pasinpay/solana";
 import { Button } from "@pasinpay/ui/components/button";
 import {
 	Card,
@@ -18,6 +19,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@pasinpay/ui/components/dialog";
+import { getBase58Decoder, getUtf8Encoder } from "@solana/kit";
+import {
+	useConnectedWallet,
+	useConnect as useSolanaConnect,
+	useSignMessage as useSolanaSignMessage,
+	useWallets,
+} from "@solana/kit-plugin-wallet/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Copy,
@@ -29,11 +37,17 @@ import {
 	ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
-import { useAccount, useConnect, useSignMessage, useSwitchChain } from "wagmi";
+import {
+	useAccount,
+	useConnect,
+	useSignMessage as useEvmSignMessage,
+	useSwitchChain,
+} from "wagmi";
 import { AuthGuard } from "@/components/auth-guard";
 import { useAppNetwork } from "@/components/network-provider";
 import { authClient } from "@/lib/auth-client";
 import { getReadableError } from "@/lib/errors";
+import { solanaClient } from "@/lib/solana-client";
 import { walletConfig } from "@/lib/wallet";
 import { trpc } from "@/utils/trpc";
 
@@ -41,10 +55,14 @@ export default function SettingsPage() {
 	const { data: session, isPending: sessionPending } = authClient.useSession();
 	const isAuthenticated = !sessionPending && Boolean(session);
 	const { address, chainId } = useAccount();
-	const { chainConfig } = useAppNetwork();
+	const { chainConfig, networkId } = useAppNetwork();
 	const { connectAsync, connectors } = useConnect();
-	const { signMessageAsync } = useSignMessage();
+	const { signMessageAsync } = useEvmSignMessage();
 	const { switchChainAsync } = useSwitchChain();
+	const solanaWallets = useWallets(solanaClient);
+	const solanaConnected = useConnectedWallet(solanaClient);
+	const solanaConnect = useSolanaConnect(solanaClient);
+	const solanaSignMessage = useSolanaSignMessage(solanaClient);
 	const queryClient = useQueryClient();
 	const challenge = useMutation(
 		trpc.bounties.walletChallenge.mutationOptions(),
@@ -90,7 +108,8 @@ export default function SettingsPage() {
 		name: string;
 		expiresAt: string | null;
 	} | null>(null);
-	const walletIsLinked = Boolean(wallet.data);
+	const linkedWallet = wallet.data?.find((item) => item.chainId === networkId);
+	const walletIsLinked = Boolean(linkedWallet);
 	const apiKeys = useQuery(
 		trpc.apiKeys.list.queryOptions(undefined, { enabled: isAuthenticated }),
 	);
@@ -103,6 +122,38 @@ export default function SettingsPage() {
 
 	async function connectWallet() {
 		try {
+			if (networkId === SOLANA_DEVNET_ID) {
+				let solanaAddress = solanaConnected?.account.address;
+				if (!solanaAddress) {
+					const availableWallet = solanaWallets[0];
+					if (!availableWallet)
+						return setMessage(
+							"No Solana wallet was detected. Install a Wallet Standard wallet such as Phantom or Solflare.",
+						);
+					const accounts = await solanaConnect.dispatchAsync(availableWallet);
+					solanaAddress = accounts[0]?.address;
+				}
+				if (!solanaAddress) return setMessage("Connect a Solana wallet first.");
+				const result = await challenge.mutateAsync({
+					address: solanaAddress,
+					chainId: SOLANA_DEVNET_ID,
+				});
+				const signatureBytes = await solanaSignMessage.dispatchAsync(
+					new Uint8Array(getUtf8Encoder().encode(result.message)),
+				);
+				const signature = getBase58Decoder().decode(signatureBytes);
+				await linkWallet.mutateAsync({
+					nonce: result.nonce,
+					address: solanaAddress,
+					chainId: SOLANA_DEVNET_ID,
+					signature,
+				});
+				await queryClient.invalidateQueries({
+					queryKey: trpc.bounties.walletLink.queryKey(),
+				});
+				setMessage("Solana Devnet wallet linked successfully.");
+				return;
+			}
 			let linkedAddress = address;
 			let linkedChainId = chainId;
 			if (!linkedAddress) {
@@ -151,7 +202,7 @@ export default function SettingsPage() {
 
 	async function unlinkLinkedWallet() {
 		try {
-			await unlinkWallet.mutateAsync();
+			await unlinkWallet.mutateAsync({ chainId: networkId });
 			await queryClient.invalidateQueries({
 				queryKey: trpc.bounties.walletLink.queryKey(),
 			});
@@ -306,15 +357,17 @@ export default function SettingsPage() {
 						<CardFooter className="justify-between gap-4">
 							<div>
 								<p className="font-mono text-sm">
-									{wallet.data?.walletAddress
-										? `${wallet.data.walletAddress.slice(0, 8)}…${wallet.data.walletAddress.slice(-6)}`
+									{linkedWallet?.walletAddress
+										? `${linkedWallet.walletAddress.slice(0, 8)}…${linkedWallet.walletAddress.slice(-6)}`
 										: address
 											? `${address.slice(0, 8)}…${address.slice(-6)}`
 											: "No wallet connected"}
 								</p>
 								<p className="mt-1 text-muted-foreground text-sm">
-									{walletConfig.chains.find((chain) => chain.id === chainId)
-										?.name ?? "Network not connected"}
+									{networkId === SOLANA_DEVNET_ID
+										? "Solana Devnet · Testnet"
+										: (walletConfig.chains.find((chain) => chain.id === chainId)
+												?.name ?? "Network not connected")}
 								</p>
 							</div>
 							<Button
