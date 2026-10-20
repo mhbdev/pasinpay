@@ -3,8 +3,9 @@
 	"type": "module",
 	"main": "src/index.ts",
 	"scripts": {
-		"build": "tsdown",
+		"build": "tsdown && bun run check-runtime-dependencies",
 		"check-types": "tsc --noEmit",
+		"check-runtime-dependencies": "bun scripts/check-runtime-dependencies.mjs",
 		"compile": "bun build --compile --no-compile-autoload-dotenv --minify --sourcemap --bytecode ./src/index.ts --outfile server",
 		"dev": "bun run --hot src/index.ts",
 		"worker": "bun run src/worker.ts",
