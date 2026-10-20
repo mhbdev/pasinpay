@@ -108,9 +108,6 @@ try {
 		containerName,
 		"--publish",
 		"8899:8899",
-		// Agave's local validator uses io_uring, blocked by Docker's default seccomp profile.
-		"--security-opt",
-		"seccomp=unconfined",
 		"--volume",
 		`${projectRoot}:/workspace`,
 		"--workdir",
@@ -134,6 +131,25 @@ try {
 	try {
 		await waitForValidator();
 	} catch (cause) {
+		await run(
+			"docker",
+			["inspect", "--format", "{{json .State}}", containerName],
+			{ capture: true },
+		).catch(() => undefined);
+		await run("docker", ["top", containerName], { capture: true }).catch(
+			() => undefined,
+		);
+		await run(
+			"docker",
+			[
+				"exec",
+				containerName,
+				"bash",
+				"-lc",
+				"tail -n 200 /tmp/pasinpay-solana-e2e-ledger/validator.log",
+			],
+			{ capture: true },
+		).catch(() => undefined);
 		await run("docker", ["logs", containerName], { capture: true }).catch(
 			() => undefined,
 		);
