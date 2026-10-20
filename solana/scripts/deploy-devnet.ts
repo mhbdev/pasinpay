@@ -129,6 +129,23 @@ if (mint.decimals !== 6)
 		"The configured Circle Devnet USDC mint does not have six decimals",
 	);
 
+const existingConfig = await fetchSolanaEscrowConfig(rpc, programId.toBase58());
+if (existingConfig) {
+	const aligned =
+		existingConfig.authority === authority.publicKey.toBase58() &&
+		existingConfig.attestor === attestor.publicKey.toBase58() &&
+		existingConfig.feeTreasury === treasury.publicKey.toBase58() &&
+		existingConfig.mint === SOLANA_DEVNET_USDC_MINT &&
+		existingConfig.feeBps === feeBps &&
+		existingConfig.networkDomain.every(
+			(value, index) => value === SOLANA_DEVNET_NETWORK_DOMAIN[index],
+		);
+	if (!aligned)
+		throw new Error(
+			"The existing on-chain config does not match these deployment keys/settings. Refusing to deploy or rotate it automatically.",
+		);
+}
+
 const containerArgs = [
 	"run",
 	"--rm",
@@ -162,27 +179,12 @@ await run("docker", [
 	"anchor",
 	"deploy",
 	"--provider.cluster",
-	"devnet",
+	rpcUrl,
 	"--provider.wallet",
 	"/workspace/solana/keys/devnet-authority.json",
 ]);
 
-const existingConfig = await fetchSolanaEscrowConfig(rpc, programId.toBase58());
-if (existingConfig) {
-	const aligned =
-		existingConfig.authority === authority.publicKey.toBase58() &&
-		existingConfig.attestor === attestor.publicKey.toBase58() &&
-		existingConfig.feeTreasury === treasury.publicKey.toBase58() &&
-		existingConfig.mint === SOLANA_DEVNET_USDC_MINT &&
-		existingConfig.feeBps === feeBps &&
-		existingConfig.networkDomain.every(
-			(value, index) => value === SOLANA_DEVNET_NETWORK_DOMAIN[index],
-		);
-	if (!aligned)
-		throw new Error(
-			"The existing on-chain config does not match these deployment keys/settings. Refusing to rotate it automatically.",
-		);
-} else {
+if (!existingConfig) {
 	const initialize = await createInitializeInstruction({
 		programId: programId.toBase58(),
 		authority: authority.publicKey.toBase58(),
