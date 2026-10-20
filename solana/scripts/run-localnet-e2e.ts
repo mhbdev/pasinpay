@@ -108,6 +108,9 @@ try {
 		containerName,
 		"--publish",
 		"8899:8899",
+		// Agave's local validator uses io_uring, blocked by Docker's default seccomp profile.
+		"--security-opt",
+		"seccomp=unconfined",
 		"--volume",
 		`${projectRoot}:/workspace`,
 		"--workdir",
