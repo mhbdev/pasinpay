@@ -275,6 +275,7 @@ describe("PasinPay Solana escrow end-to-end", () => {
 		attestor = Keypair.generate();
 		treasury = Keypair.generate();
 		await Promise.all([
+			airdrop(payer.publicKey),
 			airdrop(creator.publicKey),
 			airdrop(claimant.publicKey),
 			airdrop(outsider.publicKey),
