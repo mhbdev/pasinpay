@@ -26,12 +26,7 @@ import {
 	getBase58Decoder,
 	type Instruction,
 } from "@solana/kit";
-import {
-	getAccount,
-	getMint,
-	getOrCreateAssociatedTokenAccount,
-	TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+import { getAccount, getMint, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
 	Connection,
 	Keypair,
@@ -172,15 +167,26 @@ if (authoritySol < 0.05 * LAMPORTS_PER_SOL)
 	throw new Error(
 		"The Devnet authority needs at least 0.05 SOL for this smoke test",
 	);
-const creatorAta = await getOrCreateAssociatedTokenAccount(
-	connection,
-	authority,
-	mint,
-	authority.publicKey,
+const creatorAtaAddress = await deriveAssociatedTokenAddress(
+	authority.publicKey.toBase58(),
+	mint.toBase58(),
 );
+const creatorAtaInfo = await connection.getAccountInfo(
+	new PublicKey(creatorAtaAddress),
+	"confirmed",
+);
+const creatorAtaAmount = creatorAtaInfo
+	? (
+			await getAccount(
+				connection,
+				new PublicKey(creatorAtaAddress),
+				"confirmed",
+			)
+		).amount
+	: BigInt(0);
 const feeAmount = (rewardAmount * BigInt(feeBps)) / BigInt(10_000);
 const requiredUsdc = rewardAmount + feeAmount;
-if (creatorAta.amount < requiredUsdc)
+if (creatorAtaAmount < requiredUsdc)
 	throw new Error(
 		`The authority wallet needs ${(Number(requiredUsdc) / 1_000_000).toFixed(6)} USDC. Request Circle test USDC to ${authority.publicKey.toBase58()} and rerun.`,
 	);
@@ -350,7 +356,7 @@ const [claimantAfter, treasuryAfter, creatorAfter] = await Promise.all([
 	getAccount(connection, new PublicKey(treasuryAta), "confirmed").then(
 		(account) => account.amount,
 	),
-	getAccount(connection, creatorAta.address, "confirmed").then(
+	getAccount(connection, new PublicKey(creatorAtaAddress), "confirmed").then(
 		(account) => account.amount,
 	),
 ]);
@@ -358,7 +364,7 @@ if (
 	state.status !== "Paid" ||
 	claimantAfter - claimantBefore !== rewardAmount ||
 	treasuryAfter - treasuryBefore !== feeAmount ||
-	creatorAta.amount - creatorAfter !== requiredUsdc
+	creatorAtaAmount - creatorAfter !== requiredUsdc
 )
 	throw new Error(
 		"Final on-chain state or exact USDC reward/fee deltas are incorrect",
