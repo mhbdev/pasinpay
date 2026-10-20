@@ -5,6 +5,7 @@
 	"dependencies": {
 		"@better-auth/cimd": "1.7.5",
 		"@better-auth/mcp": "1.7.5",
+		"@better-auth/oauth-provider": "1.7.5",
 		"@hono/trpc-server": "^0.4.2",
 		"@modelcontextprotocol/server": "^2",
 		"@solana/kit": "8.5.0",

@@ -14,7 +14,8 @@ COPY --from=builder /app/apps/server/dist ./dist
 COPY apps/server/package.runtime.json ./package.json
 COPY apps/server/migrate.mjs ./migrate.mjs
 COPY packages/db/src/migrations ./migrations
-RUN bun install --production --no-save
+RUN bun install --production --no-save \
+	&& bun -e "await import('@better-auth/mcp'); await import('@better-auth/oauth-provider'); await import('better-auth'); console.log('Verified Better Auth runtime imports.')"
 
 EXPOSE 3000
 
