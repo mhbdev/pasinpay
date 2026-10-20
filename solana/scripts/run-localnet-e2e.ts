@@ -43,7 +43,7 @@ function run(
 }
 
 async function waitForValidator() {
-	const deadline = Date.now() + 90_000;
+	const deadline = Date.now() + 180_000;
 	let lastError: unknown;
 	while (Date.now() < deadline) {
 		try {
@@ -112,8 +112,9 @@ try {
 		`${projectRoot}:/workspace`,
 		"--workdir",
 		"/workspace",
-		image,
+		"--entrypoint",
 		"solana-test-validator",
+		image,
 		"--reset",
 		"--ledger",
 		"/tmp/pasinpay-solana-e2e-ledger",
